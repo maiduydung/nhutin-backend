@@ -10,15 +10,45 @@ class DriveFetcher:
     """Fetches files from Google Drive."""
     def __init__(self, settingsFile: str = "local.settings.json", scopes: list[str] | None = None):
         self.scopes = scopes or ["https://www.googleapis.com/auth/drive.readonly"]
-        
-        # Load service account credentials from local.settings.json
-        with open(settingsFile, 'r') as file:
-            settings = json.load(file)
-            serviceAccountInfo = settings.get('GoogleServiceAccount')
-            
-            if not serviceAccountInfo:
-                raise ValueError("GoogleServiceAccount not found in settings file")
-        
+
+        # Load service account credentials from multiple possible locations
+        # 1. local.settings.json (root or under Values)
+        # 2. Environment variable GOOGLE_SERVICE_ACCOUNT or GoogleServiceAccount (JSON string)
+        serviceAccountInfo = None
+
+        try:
+            with open(settingsFile, "r") as file:
+                settings = json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            settings = {}
+
+        # Top-level key (development pattern)
+        serviceAccountInfo = settings.get("GoogleServiceAccount")
+
+        # Under Values, either as dict or JSON string
+        if not serviceAccountInfo:
+            valuesSection = settings.get("Values") or {}
+            googleValue = valuesSection.get("GoogleServiceAccount")
+            if isinstance(googleValue, dict):
+                serviceAccountInfo = googleValue
+            elif isinstance(googleValue, str):
+                try:
+                    serviceAccountInfo = json.loads(googleValue)
+                except json.JSONDecodeError:
+                    logger.error("Failed to parse GoogleServiceAccount from Values as JSON string")
+
+        # Environment variable fallback (for Azure App Settings)
+        if not serviceAccountInfo:
+            googleEnv = os.getenv("GOOGLE_SERVICE_ACCOUNT") or os.getenv("GoogleServiceAccount")
+            if googleEnv:
+                try:
+                    serviceAccountInfo = json.loads(googleEnv)
+                except json.JSONDecodeError:
+                    logger.error("Failed to parse GOOGLE_SERVICE_ACCOUNT env var as JSON")
+
+        if not serviceAccountInfo:
+            raise ValueError("GoogleServiceAccount not found in local.settings.json or environment")
+
         self.creds = service_account.Credentials.from_service_account_info(
             serviceAccountInfo,
             scopes=self.scopes,
