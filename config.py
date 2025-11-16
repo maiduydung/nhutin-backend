@@ -11,6 +11,12 @@ from azure.keyvault.secrets import SecretClient
 # Load .env
 load_dotenv()
 
+# Basic logging configuration so logs show up when running modules directly
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 # Try to load local.settings.json
