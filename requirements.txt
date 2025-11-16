@@ -23,3 +23,10 @@ tqdm
 fastapi
 uvicorn
 psycopg2-binary
+
+# Data Processing
+openpyxl
+
+# Google APIs
+google-auth
+google-api-python-client
