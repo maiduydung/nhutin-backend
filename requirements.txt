@@ -1,0 +1,25 @@
+# Azure packages
+azure-functions
+azure-cosmos
+azure-servicebus
+azure-data-tables
+azure-storage-blob
+azure-identity 
+azure-keyvault-secrets
+azure-ai-formrecognizer
+
+# Core ML and Data Processing
+pandas
+numpy
+
+# Utilities
+tenacity
+python-dotenv
+aiohttp
+aiofiles
+tqdm
+
+# Backend
+fastapi
+uvicorn
+psycopg2-binary

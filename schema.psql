@@ -1,0 +1,28 @@
+-- Items table
+CREATE TABLE items (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    unit TEXT
+);
+
+-- Inventory Records table
+CREATE TABLE inventory_records (
+    id SERIAL PRIMARY KEY,
+    item_id INTEGER REFERENCES items(id),
+    record_date DATE DEFAULT CURRENT_DATE,
+
+    initial_quantity INTEGER,
+    initial_value BIGINT,
+
+    imported_quantity INTEGER,
+    imported_value BIGINT,
+
+    exported_quantity INTEGER,
+    exported_value BIGINT,
+
+    final_quantity INTEGER,
+    final_value BIGINT,
+
+    UNIQUE (item_id, record_date)
+);
