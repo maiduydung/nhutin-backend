@@ -24,6 +24,9 @@ fastapi
 uvicorn
 psycopg2-binary
 
+# Validation
+pydantic>=2.6.0
+
 # Data Processing
 openpyxl
 

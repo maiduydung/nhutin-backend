@@ -1,12 +1,12 @@
 import json
+import traceback
 
 import azure.functions as func
+from pydantic import ValidationError
 
-from services.fetcher import DriveFetcher
-from services.inventory import Inventory
 from config import logger
+from models.user_input import UserInput
 from services.database import Database
-import traceback
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 database = Database()
@@ -31,13 +31,28 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
     Route: /api/process_receipt
     """
     try:
-        body = req.get_json()
-        logger.info(f"Received request body: {body}")
-        
-        inventory_records = database.executeQuery("SELECT * FROM inventory_records")
-        logger.info(f"✅ Inventory records: {inventory_records}")
+        try:
+            body = req.get_json()
+        except ValueError:
+            logger.warning("❌ Invalid JSON payload; defaulting to empty dict.")
+            body = {}
 
-        responsePayload = {"status": "ok", "inventoryRecords": inventory_records}
+        logger.info(f"✅ Received request body: {body}")
+
+        try:
+            userInput = UserInput.model_validate(body or {})
+        except ValidationError as validationError:
+            logger.warning(f"❌ Validation failed: {validationError}")
+            return func.HttpResponse(
+                body=json.dumps({"status": "validation_error", "errors": validationError.errors()}),
+                mimetype="application/json",
+                status_code=400,
+            )
+
+        responsePayload = {
+            "status": "ok",
+            "userInput": userInput.model_dump(),
+        }
         return func.HttpResponse(
             body=json.dumps(responsePayload, default=str),
             mimetype="application/json",
@@ -46,4 +61,8 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception:
         logger.error(f"❌ Error processing request: {traceback.format_exc()}")
-        return func.HttpResponse(body=json.dumps({"status": "error", "message": traceback.format_exc()}), mimetype="application/json", status_code=500,)
+        return func.HttpResponse(
+            body=json.dumps({"status": "error", "message": traceback.format_exc()}),
+            mimetype="application/json",
+            status_code=500,
+        )
