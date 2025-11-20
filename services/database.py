@@ -3,6 +3,9 @@ import psycopg2
 
 
 class Database:
+    def __init__(self):
+        self.connection = self.getDbConnection()
+
     @staticmethod
     def getDbConnection():
         connection = psycopg2.connect(
@@ -14,5 +17,14 @@ class Database:
         )
         return connection
 
+    def executeQuery(self, query: str, params: tuple = None):
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
 
+    def commit(self):
+        self.connection.commit()
 
+    def close(self):
+        if self.connection:
+            self.connection.close()
