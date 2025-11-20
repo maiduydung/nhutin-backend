@@ -1,15 +1,50 @@
 import pandas as pd
+import re
+from datetime import datetime
 from services.database import Database
 from config import logger
 
 
 class Inventory:
     @staticmethod
+    def _extractDateFromVietnameseFormat(dateString: str) -> datetime:
+        """
+        Extract date from Vietnamese format: 'Ngày DD tháng MM năm YYYY'
+        Returns a datetime object.
+        """
+        try:
+            pattern = r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'
+            match = re.search(pattern, dateString)
+            
+            if match:
+                day = int(match.group(1))
+                month = int(match.group(2))
+                year = int(match.group(3))
+                return datetime(year, month, day)
+            else:
+                logger.warning(f"Could not parse date from: {dateString}, using current date")
+                return datetime.now()
+        except Exception as e:
+            logger.error(f"Error parsing date: {e}, using current date")
+            return datetime.now()
+
+    @staticmethod
     def ingestInventoryFromExcel(filePath: str):
+        """
+        Ingests inventory data from Excel file and stores in database.
+        Extracts record date from row 2 of the Excel file.
+        """
         connection = Database.getDbConnection()
         cursor = connection.cursor()
 
         try:
+            # Read row 2 (index 1) to extract the date
+            dfDate = pd.read_excel(filePath, sheet_name=0, header=None, nrows=2)
+            dateString = str(dfDate.iloc[1, 0]) if len(dfDate) > 1 else ""
+            recordDate = Inventory._extractDateFromVietnameseFormat(dateString)
+            logger.info(f"📅 Extracted record date: {recordDate.date()}")
+            
+            # Read the actual data starting from row 6
             dfRaw = pd.read_excel(filePath, sheet_name=0, header=None, skiprows=5)
 
             df = pd.DataFrame({
@@ -51,6 +86,7 @@ class Inventory:
                     """
                     INSERT INTO inventory_records (
                         item_id,
+                        record_date,
                         initial_quantity,
                         initial_value,
                         imported_quantity,
@@ -60,7 +96,7 @@ class Inventory:
                         final_quantity,
                         final_value
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (item_id, record_date) DO UPDATE
                     SET initial_quantity = EXCLUDED.initial_quantity,
                         initial_value = EXCLUDED.initial_value,
@@ -73,6 +109,7 @@ class Inventory:
                     """,
                     (
                         itemId,
+                        recordDate.date(),
                         int(row["initial_quantity"] or 0),
                         int(row["initial_value"] or 0),
                         int(row["imported_quantity"] or 0),
