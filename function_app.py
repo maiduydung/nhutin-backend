@@ -5,67 +5,45 @@ import azure.functions as func
 from services.fetcher import DriveFetcher
 from services.inventory import Inventory
 from config import logger
-
+from services.database import Database
+import traceback
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
-
+database = Database()
 
 @app.function_name(name="health")
 @app.route(route="health", methods=["GET"])
-def health(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
+def health(req: func.HttpRequest) -> func.HttpResponse:
     """Simple health check endpoint."""
     return func.HttpResponse(
-        body=json.dumps({"status": "ok", "message": "NhuTin DB Ingestion Service is running"}),
+        body=json.dumps({"status": "ok", "message": "NhuTin DB Receipts Processing Service is running"}),
         mimetype="application/json",
         status_code=200,
     )
 
 
-@app.function_name(name="ingest")
-@app.route(route="ingest", methods=["POST"])
-def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
+@app.function_name(name="process-receipts")
+@app.route(route="process_receipt", methods=["POST"])
+def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Trigger inventory ingestion from the latest Excel file in Google Drive.
+    Trigger receipts processing from the user inputs, in JSON format.
 
-    Route: /api/ingest
+    Route: /api/process_receipt
     """
-    driveFetcher = DriveFetcher()
-    inventory = Inventory()
-
     try:
-        filePath = driveFetcher.fetchLatestExcelFromFolder("Nhu Tin")
+        body = req.get_json()
+        logger.info(f"Received request body: {body}")
+        
+        inventory_records = database.executeQuery("SELECT * FROM inventory_records")
+        logger.info(f"✅ Inventory records: {inventory_records}")
 
-        if not filePath:
-            logger.error("No Excel file found to ingest")
-            return func.HttpResponse(
-                body=json.dumps(
-                    {
-                        "status": "error",
-                        "message": "No Excel file found in Google Drive folder",
-                    }
-                ),
-                mimetype="application/json",
-                status_code=500,
-            )
-
-        inventory.ingestInventoryFromExcel(filePath)
-
+        responsePayload = {"status": "ok", "inventoryRecords": inventory_records}
         return func.HttpResponse(
-            body=json.dumps({"status": "ok", "filePath": filePath}),
+            body=json.dumps(responsePayload, default=str),
             mimetype="application/json",
             status_code=200,
         )
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Error during ingestion: {e}")
-        return func.HttpResponse(
-            body=json.dumps(
-                {
-                    "status": "error",
-                    "message": "Unexpected error during ingestion",
-                }
-            ),
-            mimetype="application/json",
-            status_code=500,
-        )
 
-
+    except Exception:
+        logger.error(f"❌ Error processing request: {traceback.format_exc()}")
+        return func.HttpResponse(body=json.dumps({"status": "error", "message": traceback.format_exc()}), mimetype="application/json", status_code=500,)
