@@ -1,15 +1,19 @@
 import pandas as pd
 import re
+from decimal import Decimal
 from datetime import datetime
 from services.database import Database
+from services.normalizer import ItemNormalizer
 from config import logger
 
 
 class Inventory:
+    """Handles inventory data ingestion from Excel files."""
+
     @staticmethod
     def _extractDateFromVietnameseFormat(dateString: str) -> datetime:
         """
-        Extract date from Vietnamese format: 'Ngày DD tháng MM năm YYYY'
+        Extract date from Vietnamese format: 'Ngày DD tháng MM năm YYYY'.
         Returns a datetime object.
         """
         try:
@@ -29,11 +33,41 @@ class Inventory:
             return datetime.now()
 
     @staticmethod
+    def _calculateUnitPrice(value: int, quantity: int) -> Decimal | None:
+        """
+        Calculate unit price from value and quantity.
+        Returns None if quantity is zero or negative.
+        """
+        if quantity > 0 and value > 0:
+            return Decimal(str(value)) / Decimal(str(quantity))
+        return None
+
+    @staticmethod
+    def _insertPriceHistory(cursor, itemId: int, price: Decimal, source: str, effectiveAt: datetime):
+        """
+        Insert a price record into price_history table.
+        Uses ON CONFLICT to avoid duplicate entries for same item/source/date.
+        """
+        cursor.execute(
+            """
+            INSERT INTO price_history (item_id, price, source, effective_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT DO NOTHING;
+            """,
+            (itemId, price, source, effectiveAt),
+        )
+
+    @staticmethod
     def ingestInventoryFromExcel(filePath: str):
         """
-        Ingests inventory data from Excel file and stores in database.
-        Extracts record date from row 2 of the Excel file.
+        Ingest inventory data from Excel file and store in database.
+        Extracts record date from row 2, data from row 6+.
+        Also calculates and stores unit prices in price_history.
+        Automatically initializes schema if tables don't exist.
         """
+        # Ensure schema exists before ingestion
+        Database.initSchema()
+
         connection = Database.getDbConnection()
         cursor = connection.cursor()
 
@@ -61,40 +95,49 @@ class Inventory:
                 "final_value": dfRaw[11],
             })
 
-            for _, row in df.iterrows():
-                code = str(row["code"]).strip() if pd.notna(row["code"]) else None
-                name = str(row["name"]).strip() if pd.notna(row["name"]) else None
-                unit = str(row["unit"]).strip() if pd.notna(row["unit"]) else None
+            priceRecordsInserted = 0
 
-                if not code or not name:
+            for _, row in df.iterrows():
+                rawCode = str(row["code"]).strip() if pd.notna(row["code"]) else None
+                rawName = str(row["name"]).strip() if pd.notna(row["name"]) else None
+                rawUnit = str(row["unit"]).strip() if pd.notna(row["unit"]) else None
+
+                if not rawCode or not rawName:
                     continue  # Skip rows with missing critical info
 
+                # Normalize item data
+                normalized = ItemNormalizer.normalize(rawCode, rawName, rawUnit)
+
+                # Upsert item with normalized data and type
                 cursor.execute(
                     """
-                    INSERT INTO items (code, name, unit)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO items (code, name, type, unit)
+                    VALUES (%s, %s, %s, %s)
                     ON CONFLICT (code) DO UPDATE
                     SET name = EXCLUDED.name,
+                        type = EXCLUDED.type,
                         unit = EXCLUDED.unit
                     RETURNING id;
                     """,
-                    (code, name, unit),
+                    (normalized.code, normalized.name, normalized.itemType, normalized.unit),
                 )
                 itemId = cursor.fetchone()[0]
 
+                # Parse numeric values
+                importedQty = int(row["imported_quantity"] or 0)
+                importedVal = int(row["imported_value"] or 0)
+                exportedQty = int(row["exported_quantity"] or 0)
+                exportedVal = int(row["exported_value"] or 0)
+
+                # Upsert inventory record
                 cursor.execute(
                     """
                     INSERT INTO inventory_records (
-                        item_id,
-                        record_date,
-                        initial_quantity,
-                        initial_value,
-                        imported_quantity,
-                        imported_value,
-                        exported_quantity,
-                        exported_value,
-                        final_quantity,
-                        final_value
+                        item_id, record_date,
+                        initial_quantity, initial_value,
+                        imported_quantity, imported_value,
+                        exported_quantity, exported_value,
+                        final_quantity, final_value
                     )
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (item_id, record_date) DO UPDATE
@@ -112,21 +155,51 @@ class Inventory:
                         recordDate.date(),
                         int(row["initial_quantity"] or 0),
                         int(row["initial_value"] or 0),
-                        int(row["imported_quantity"] or 0),
-                        int(row["imported_value"] or 0),
-                        int(row["exported_quantity"] or 0),
-                        int(row["exported_value"] or 0),
+                        importedQty,
+                        importedVal,
+                        exportedQty,
+                        exportedVal,
                         int(row["final_quantity"] or 0),
                         int(row["final_value"] or 0),
                     ),
                 )
 
+                # Calculate and insert price history from import data
+                importPrice = Inventory._calculateUnitPrice(importedVal, importedQty)
+                if importPrice:
+                    Inventory._insertPriceHistory(cursor, itemId, importPrice, "import", recordDate)
+                    priceRecordsInserted += 1
+
+                # Calculate and insert price history from export data
+                exportPrice = Inventory._calculateUnitPrice(exportedVal, exportedQty)
+                if exportPrice:
+                    Inventory._insertPriceHistory(cursor, itemId, exportPrice, "export", recordDate)
+                    priceRecordsInserted += 1
+
             connection.commit()
-            logger.info("✅ Inventory ingestion complete!")
+            logger.info(f"✅ Inventory ingestion complete! Price records: {priceRecordsInserted}")
 
         except Exception as e:
             connection.rollback()
             logger.error(f"❌ Error during ingestion: {e}")
+            raise
         finally:
             cursor.close()
             connection.close()
+
+
+def main():
+    """Test inventory ingestion with a local Excel file."""
+    import os
+    testFile = os.path.join("data", "Tong_hop_ton_kho (66).xlsx")
+    
+    if not os.path.exists(testFile):
+        logger.error(f"Test file not found: {testFile}")
+        return
+    
+    logger.info(f"🧪 Testing ingestion with: {testFile}")
+    Inventory.ingestInventoryFromExcel(testFile)
+
+
+if __name__ == "__main__":
+    main()

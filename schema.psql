@@ -1,28 +1,35 @@
 -- Items table
-CREATE TABLE items (
+CREATE TABLE IF NOT EXISTS items (
     id SERIAL PRIMARY KEY,
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    type TEXT NOT NULL,
     unit TEXT
 );
 
--- Inventory Records table
-CREATE TABLE inventory_records (
+-- Inventory records table
+CREATE TABLE IF NOT EXISTS inventory_records (
     id SERIAL PRIMARY KEY,
-    item_id INTEGER REFERENCES items(id),
+    item_id INTEGER NOT NULL REFERENCES items(id),
     record_date DATE DEFAULT CURRENT_DATE,
-
     initial_quantity INTEGER,
     initial_value BIGINT,
-
     imported_quantity INTEGER,
     imported_value BIGINT,
-
     exported_quantity INTEGER,
     exported_value BIGINT,
-
     final_quantity INTEGER,
     final_value BIGINT,
-
     UNIQUE (item_id, record_date)
+);
+
+-- Price history table
+CREATE TABLE IF NOT EXISTS price_history (
+    id SERIAL PRIMARY KEY,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    price NUMERIC NOT NULL,             -- unit price at that moment
+    source TEXT,                        -- 'import' or 'export'
+    note TEXT,
+    effective_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (item_id, source, effective_at)
 );
