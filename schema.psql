@@ -1,15 +1,21 @@
 -- Items table
+-- Stores master item catalog information
 CREATE TABLE items (
     id SERIAL PRIMARY KEY,
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    unit TEXT
+    type TEXT NOT NULL,  -- Item category: walking_floor_r2dx, walking_floor_ksd, walking_floor_kmd, 
+                        -- steel_box, steel_plate, steel_i, steel_u, steel_pipe, steel_square,
+                        -- stainless_steel, galvanized_sheet, aluminum, hydraulic_pump, 
+                        -- controller, container, burning_fuel
+    unit TEXT  -- Unit of measurement: kg, L, pcs, set, etc.
 );
 
 -- Inventory Records table
+-- Stores historical inventory data with quantities and values per date
 CREATE TABLE inventory_records (
     id SERIAL PRIMARY KEY,
-    item_id INTEGER REFERENCES items(id),
+    item_id INTEGER NOT NULL REFERENCES items(id),
     record_date DATE DEFAULT CURRENT_DATE,
 
     initial_quantity INTEGER,
@@ -25,4 +31,18 @@ CREATE TABLE inventory_records (
     final_value BIGINT,
 
     UNIQUE (item_id, record_date)
+);
+
+-- Price History table
+-- Stores historical pricing information for items from various sources
+-- Used for tracking price changes over time and different price sources (import, market, receipt, etc.)
+CREATE TABLE price_history (
+    id SERIAL PRIMARY KEY,
+    item_id INTEGER NOT NULL REFERENCES items(id),
+    price NUMERIC NOT NULL,
+    source TEXT,
+    note TEXT,
+    effective_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now(),
+
+    UNIQUE (item_id, source, effective_at)
 );
