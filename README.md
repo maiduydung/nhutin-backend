@@ -9,6 +9,8 @@ Azure Functions-based inventory data ingestion service for NhuTin. Processes Vie
 - 🏷️ **Item Classification** — Auto-categorizes items (steel, fuel, equipment, etc.)
 - 💰 **Price Tracking** — Records unit prices from import/export data
 - ☁️ **Azure Ready** — Deployed as Azure Functions with PostgreSQL Flex
+- 📈 **Data Visualization** — Interactive Gradio dashboard with charts and insights
+- 🤖 **AI Chat Assistant** — LLM-powered inventory analysis (optional OpenAI integration)
 
 ## Quick Start
 
@@ -24,6 +26,46 @@ func start
 
 # Or test ingestion directly
 python main.py
+```
+
+## Dashboard
+
+Launch the interactive Gradio dashboard:
+
+```bash
+# Activate venv and run
+source .venv/bin/activate
+python app.py
+```
+
+Access at **http://localhost:7860**
+
+### Dashboard Features
+
+| Tab | Description |
+|-----|-------------|
+| 📊 Overview | Summary stats, pie charts, bar charts, trend analysis |
+| 💬 AI Assistant | Chat with your inventory data (requires OPENAI_API_KEY) |
+| 🔍 Search | Search items by code or name |
+| 📋 All Items | Complete inventory listing with export |
+
+To enable AI chat, add to `local.settings.json`:
+```json
+{
+  "Values": {
+    "OPENAI_API_KEY": "sk-your-key-here"
+  }
+}
+```
+
+## Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# With coverage
+pytest tests/ --cov=services --cov=app
 ```
 
 ## API Endpoints
