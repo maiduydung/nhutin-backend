@@ -460,6 +460,8 @@ class Optimizer:
                 totalValue = item["unitPrice"] * quantity
                 
                 if currentCost + totalValue > maxCost:
+                    if item["unitPrice"] <= 0:
+                        continue
                     maxBudgetQty = int((maxCost - currentCost) / item["unitPrice"])
                     if maxBudgetQty > 0:
                         quantity = min(maxBudgetQty, item["availableQuantity"], maxWeightQuantity)
@@ -486,6 +488,9 @@ class Optimizer:
         for item in zeroWeightItems:
             if currentCost >= maxCost:
                 break
+            
+            if item["unitPrice"] <= 0:
+                continue
             
             budgetRemaining = maxCost - currentCost
             maxQty = min(item["availableQuantity"], int(budgetRemaining / item["unitPrice"]))
@@ -582,6 +587,8 @@ class Optimizer:
                     # Final check - make sure we don't exceed budget
                     if currentCost + additionalCost > maxCost:
                         # Take as much as budget allows
+                        if item["unitPrice"] <= 0:
+                            continue
                         maxBudgetQty = int((maxCost - currentCost) / item["unitPrice"])
                         if maxBudgetQty <= 0:
                             continue
