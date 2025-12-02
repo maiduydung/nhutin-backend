@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-12-02
+
+### Added
+
+#### Zero-Weight Item Support
+- **Container Support**: Containers are now included in optimization as zero-weight items
+  - Container weight set to 0 (packaging, not cargo - doesn't count toward weight constraint)
+  - Helps fill budget and reduce profit margin
+  - Example: Adding a 34M VND container reduced profit margin from 34.48% to 26.48%
+
+#### Extended Variable Item Types
+- Optimizer now supports 10 variable item types:
+  - `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`, `steel_plate`
+  - `galvanized_sheet`, `stainless_steel`, `hydraulic_pump`, `container`
+
+### Changed
+
+#### Optimization Algorithm (`services/optimizer.py`)
+- **Two-Pass Variable Item Selection**:
+  1. First pass: Select weight-contributing items (steel, sheets) by weight-to-cost ratio
+  2. Second pass: Add zero-weight items (containers) to fill remaining budget
+- This ensures expensive items that don't add weight are used to minimize profit margin
+
+#### Weight Calculator (`services/weight_calculator.py`)
+- Added `CONTAINER_WEIGHT` constant (set to 0 for both 20ft and 40ft)
+- Added `HYDRAULIC_PUMP_WEIGHT` constant (50 kg)
+- Updated `calculateItemWeight()` to handle containers and hydraulic pumps
+
+### Performance Improvement
+
+For a KSD container with 425M VND receipt price:
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Profit Margin | 34.48% | 26.48% | -8.00 pp |
+| Total Cost | 278.4M VND | 312.4M VND | +34M VND |
+| Items Used | 7 | 8 | +1 (container) |
+
+### Documentation
+- Updated `docs/ALGORITHM.md` with zero-weight item handling
+- Updated `README.md` with new variable item types
+- Added this changelog entry
+
+---
+
 ## [1.0.0] - 2025-01-XX
 
 ### Added

@@ -48,18 +48,26 @@ These items are **always included** in every container configuration:
 
 ## Phase 2: Variable Items Optimization
 
-### Step 1: Group Items by Type
+### Supported Variable Item Types
 ```python
-itemsByType = {
-    "steel_box": [...],
-    "steel_i": [...],
-    "steel_square": [...],
-    "galvanized_sheet": [...]
-}
+variableTypes = [
+    'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
+    'galvanized_sheet', 'stainless_steel', 'hydraulic_pump', 'container'
+]
 ```
 
-### Step 2: Select Best Item from Each Type
-For each item type:
+### Step 1: Separate Items by Weight Contribution
+Items are separated into two categories:
+1. **Weight-contributing items**: Items where `weightPerUnit > 0` (steel, galvanized sheets)
+2. **Zero-weight items**: Items where `weightPerUnit = 0` (containers - they're packaging, not cargo)
+
+```python
+zeroWeightItems = []   # e.g., containers
+weightItems = []       # e.g., steel, galvanized sheets
+```
+
+### Step 2: Select Weight-Contributing Items (by type for variety)
+For each item type with weight > 0:
 1. Calculate weight-to-cost ratio for all items: `ratio = weight_per_unit / unit_price`
 2. Select item with **highest ratio** (most efficient: kg per VND)
 3. Calculate maximum quantity:
@@ -72,10 +80,26 @@ For each item type:
 4. Take **maximum possible quantity** (greedy approach)
 5. Add to selected items
 
-### Step 3: Fill Remaining Weight
+### Step 3: Add Zero-Weight Items to Fill Budget
+After selecting weight-contributing items, add zero-weight items (like containers) to fill remaining budget:
+
+```python
+for item in zeroWeightItems:
+    if currentCost >= maxCost:
+        break
+    budgetRemaining = maxCost - currentCost
+    maxQty = min(item["availableQuantity"], int(budgetRemaining / item["unitPrice"]))
+    if maxQty > 0:
+        selectedItems.append(item)
+        currentCost += item["unitPrice"] * maxQty
+```
+
+This ensures expensive items that don't add weight (like container shells) are used to fill the budget gap and reduce profit margin.
+
+### Step 4: Fill Remaining Weight
 Iteratively fill remaining weight capacity:
 
-1. **Sort all variable items** by weight-to-cost ratio (descending)
+1. **Sort all weight-contributing items** by weight-to-cost ratio (descending)
 2. **For each item** (best ratio first):
    - Check if already selected (can add more quantity)
    - Calculate how much more can be added
@@ -86,7 +110,7 @@ Iteratively fill remaining weight capacity:
    - Budget exhausted (cost ≥ maxCost), OR
    - No more items can be added
 
-### Step 4: Iteration Loop
+### Step 5: Iteration Loop
 The algorithm uses a **while loop** (max 20 iterations) to ensure all items are considered:
 - Recalculates `currentTotalWeight` and `currentCost` each iteration
 - Stops when no progress made (weight and cost unchanged)
@@ -112,7 +136,7 @@ weight = containerLength × density_kg_per_m × bars_per_container
 ```python
 weight = quantity  # Quantity is already in kilograms
 ```
-- Applies to: `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`
+- Applies to: `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`, `steel_plate`, `stainless_steel`
 
 ### 4. Galvanized Sheets (`unit = "m"`)
 ```python
@@ -122,6 +146,19 @@ weight = quantity × weight_per_meter
 - Dimensions extracted from item name using regex: `(\d+\.?\d*)\s*x\s*(\d+)`
 - Example: "Tôn mạ kẽm 0.95 x 1200" → 0.95mm × 1200mm × 7850 / 1,000,000 = 8.9445 kg/m
 - Density of galvanized steel: 7850 kg/m³
+
+### 5. Containers (`unit = "set"`)
+```python
+weight = 0  # Containers don't count toward weight constraint
+```
+- **Important**: Container weight is set to 0 because it's the packaging, not cargo
+- The weight constraint (3000-3700kg) applies to cargo that goes INTO the container
+- Containers are high-value items used to fill budget and reduce profit margin
+
+### 6. Hydraulic Pumps (`unit = "cái" or "pcs"`)
+```python
+weight = quantity × 50  # Approximately 50 kg per unit
+```
 
 ## Profit Margin Calculation
 
@@ -147,22 +184,31 @@ function optimize(containerLength, itemModelType, slatType, receiptPrice):
     maxCost = receiptPrice × 0.75  // 25% profit margin
     
     // Phase 2: Variable Items
-    variableItems = getVariableItems()  // steel_box, steel_i, steel_square, galvanized_sheet
+    variableItems = getVariableItems()  // All variable types including container
     selectedItems = []
     currentWeight = fixedWeight
     currentCost = fixedCost
     
-    // Group by type for variety
-    itemsByType = groupByType(variableItems)
+    // Separate by weight contribution
+    zeroWeightItems = items where weightPerUnit == 0  // containers
+    weightItems = items where weightPerUnit > 0       // steel, sheets
     
-    // Select best from each type
+    // Step 1: Select weight-contributing items by type for variety
+    itemsByType = groupByType(weightItems)
     for each type in itemsByType:
         bestItem = item with highest (weightPerUnit / unitPrice)
         maxQty = min(availableQty, weightSpaceLeft, budgetLeft)
         addItem(bestItem, maxQty)
     
-    // Fill remaining weight
-    sort all items by (weightPerUnit / unitPrice) descending
+    // Step 2: Add zero-weight items to fill budget (reduces profit margin)
+    for each item in zeroWeightItems:
+        if currentCost >= maxCost: break
+        budgetLeft = maxCost - currentCost
+        maxQty = min(availableQty, budgetLeft / unitPrice)
+        addItem(item, maxQty)
+    
+    // Step 3: Fill remaining weight with best-ratio items
+    sort weightItems by (weightPerUnit / unitPrice) descending
     
     while currentWeight < MAX_WEIGHT and currentCost < maxCost:
         for each item in sortedItems:

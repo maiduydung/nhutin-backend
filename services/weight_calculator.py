@@ -90,32 +90,55 @@ class WeightCalculator:
         )
         return weightPerMeter
 
+    # Weight constants for non-kg items (approximate values)
+    # Container weight is 0 because it's the packaging, not cargo
+    # The weight constraint applies to cargo that goes INTO the container
+    CONTAINER_WEIGHT = {
+        "20ft": 0,  # Not counted - it's the packaging
+        "40ft": 0,  # Not counted - it's the packaging
+    }
+    HYDRAULIC_PUMP_WEIGHT = 50  # kg per unit (approximate)
+    
     @staticmethod
     def calculateItemWeight(
         itemType: str, unit: str, quantity: float, itemName: str = ""
     ) -> float:
         """
         Calculate total weight for an item based on its type and unit.
+        Supports: kg (direct), set (walking floors, containers), m (galvanized sheets)
         """
+        # Direct weight in kg
         if unit == "kg":
             return quantity
         
-        if unit == "set":
-            if "walking_floor" in itemType:
-                # Should use config, but for safety calculate from type
-                for modelType, config in WALKING_FLOORS.items():
-                    if config["type"] == itemType:
-                        return quantity * config["weight"]
-                return 0.0
+        # Walking floor sets
+        if unit == "set" and "walking_floor" in itemType:
+            for modelType, config in WALKING_FLOORS.items():
+                if config["type"] == itemType:
+                    return quantity * config["weight"]
             return 0.0
         
+        # Container sets
+        if unit == "set" and itemType == "container":
+            # Detect container size from name
+            if "40" in itemName.lower():
+                return quantity * WeightCalculator.CONTAINER_WEIGHT["40ft"]
+            return quantity * WeightCalculator.CONTAINER_WEIGHT["20ft"]
+        
+        # Galvanized sheets (per meter)
         if unit == "m" and itemType == "galvanized_sheet":
             weightPerMeter = WeightCalculator.calculateGalvanizedSheetWeightPerMeter(
                 itemName
             )
             return quantity * weightPerMeter
         
-        return 0.0
+        # Hydraulic pump (per piece - "cái" or "pcs")
+        if itemType == "hydraulic_pump":
+            return quantity * WeightCalculator.HYDRAULIC_PUMP_WEIGHT
+        
+        # Default: treat as kg if unknown
+        logger.warning(f"Unknown weight calculation for type={itemType}, unit={unit}")
+        return quantity if unit in ["kg", "pcs", "cái"] else 0.0
 
 
 def main():

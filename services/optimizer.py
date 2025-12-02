@@ -149,7 +149,18 @@ class Optimizer:
         }
 
     def _getVariableItems(self) -> list[dict[str, Any]]:
-        """Get all variable items available for optimization."""
+        """Get all variable items available for optimization.
+        
+        Includes all item types except walking floors and aluminum (which are fixed items).
+        This allows the optimizer to use whatever inventory is available.
+        """
+        # Include all item types that can be used as variable items
+        # Excludes: walking_floor_*, aluminum (these are fixed items)
+        variableTypes = [
+            'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
+            'galvanized_sheet', 'stainless_steel', 'hydraulic_pump', 'container'
+        ]
+        
         result = self.db.executeQuery(
             """
             SELECT DISTINCT ON (i.id)
@@ -160,10 +171,11 @@ class Optimizer:
                      ELSE 0 END as unit_price
             FROM items i
             JOIN inventory_records ir ON i.id = ir.item_id
-            WHERE i.type IN ('steel_box', 'steel_i', 'steel_square', 'galvanized_sheet')
+            WHERE i.type = ANY(%s)
               AND ir.final_quantity > 0
             ORDER BY i.id, ir.record_date DESC
-            """
+            """,
+            (variableTypes,)
         )
 
         items = []
@@ -208,9 +220,30 @@ class Optimizer:
                 itemsByType[itemType] = []
             itemsByType[itemType].append(item)
 
-        # Select at least one item from each available type (if budget allows)
-        # Prioritize items with better weight-to-cost ratio
+        # Separate items into weight-contributing and zero-weight items
+        zeroWeightItems = []
+        weightItems = []
+        
         for itemType, items in itemsByType.items():
+            for item in items:
+                weightPerUnit = self.weightCalculator.calculateItemWeight(
+                    item["type"], item["unit"], 1, item["name"]
+                )
+                item["_weightPerUnit"] = weightPerUnit
+                
+                if weightPerUnit > 0:
+                    weightItems.append(item)
+                else:
+                    zeroWeightItems.append(item)
+        
+        # Step 1: Select weight-contributing items first (by type for variety)
+        itemsByTypeWeighted = {}
+        for item in weightItems:
+            if item["type"] not in itemsByTypeWeighted:
+                itemsByTypeWeighted[item["type"]] = []
+            itemsByTypeWeighted[item["type"]].append(item)
+        
+        for itemType, items in itemsByTypeWeighted.items():
             if not items:
                 continue
             
@@ -219,13 +252,9 @@ class Optimizer:
             bestRatio = 0
             
             for item in items:
-                weightPerUnit = self.weightCalculator.calculateItemWeight(
-                    item["type"], item["unit"], 1, item["name"]
-                )
-                if weightPerUnit <= 0 or item["unitPrice"] <= 0:
+                if item["unitPrice"] <= 0:
                     continue
-                
-                ratio = weightPerUnit / item["unitPrice"]  # kg per VND
+                ratio = item["_weightPerUnit"] / item["unitPrice"]  # kg per VND
                 if ratio > bestRatio:
                     bestRatio = ratio
                     bestItem = item
@@ -234,37 +263,23 @@ class Optimizer:
                 continue
             
             item = bestItem
-            weightPerUnit = self.weightCalculator.calculateItemWeight(
-                item["type"], item["unit"], 1, item["name"]
-            )
-            
-            if weightPerUnit <= 0:
-                continue
+            weightPerUnit = item["_weightPerUnit"]
 
             # Calculate max quantity - be greedy! Take ALL available if budget allows
-            # Calculate how much weight space we have left
-            currentTotalWeight = fixedWeight + sum(item["weight"] for item in selectedItems)
+            currentTotalWeight = fixedWeight + sum(i["weight"] for i in selectedItems)
             weightSpaceLeft = self.MAX_WEIGHT - currentTotalWeight
             
-            # Take as much as possible - prioritize taking ALL available quantity
             maxWeightQuantity = int(weightSpaceLeft / weightPerUnit) if weightPerUnit > 0 else item["availableQuantity"]
             maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else item["availableQuantity"]
             
-            # Be greedy - take maximum possible
-            maxQuantity = min(
-                item["availableQuantity"],
-                maxWeightQuantity,
-                maxBudgetQuantity
-            )
+            maxQuantity = min(item["availableQuantity"], maxWeightQuantity, maxBudgetQuantity)
             
             if maxQuantity > 0:
                 quantity = maxQuantity
                 weight = weightPerUnit * quantity
                 totalValue = item["unitPrice"] * quantity
                 
-                # Final budget check
                 if currentCost + totalValue > maxCost:
-                    # Take as much as budget allows
                     maxBudgetQty = int((maxCost - currentCost) / item["unitPrice"])
                     if maxBudgetQty > 0:
                         quantity = min(maxBudgetQty, item["availableQuantity"], maxWeightQuantity)
@@ -286,6 +301,29 @@ class Optimizer:
                 
                 currentCost += totalValue
                 usedTypes.add(itemType)
+        
+        # Step 2: Add zero-weight items (like containers) to fill budget
+        for item in zeroWeightItems:
+            if currentCost >= maxCost:
+                break
+            
+            budgetRemaining = maxCost - currentCost
+            maxQty = min(item["availableQuantity"], int(budgetRemaining / item["unitPrice"]))
+            
+            if maxQty > 0:
+                totalValue = item["unitPrice"] * maxQty
+                selectedItems.append({
+                    "id": item["id"],
+                    "code": item["code"],
+                    "name": item["name"],
+                    "unit": item["unit"],
+                    "quantity": maxQty,
+                    "unitPrice": item["unitPrice"],
+                    "totalValue": totalValue,
+                    "weight": 0,  # Zero weight item
+                })
+                currentCost += totalValue
+                usedTypes.add(item["type"])
 
         # Fill remaining weight - can add more to already selected items or select new ones
         # Create a map of selected items by ID for easy lookup

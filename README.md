@@ -269,12 +269,16 @@ Content-Type: application/json
      - Always includes 1 walking floor set (based on `itemModelType`)
      - Always includes aluminum bars (calculated from `containerLength` and `slatType`)
    - **Variable Items Optimization**:
-     - Selects from: `steel_box`, `steel_i`, `steel_square`, `galvanized_sheet`
+     - Selects from 10 item types: `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`, `steel_plate`, `galvanized_sheet`, `stainless_steel`, `hydraulic_pump`, `container`
+     - Two-pass selection: (1) weight-contributing items by ratio, (2) zero-weight items to fill budget
      - Maximizes variety (uses multiple item types)
      - Greedy algorithm prioritizing weight-to-cost ratio
+   - **Zero-Weight Items**:
+     - Containers are treated as packaging (weight = 0)
+     - Used to fill budget and reduce profit margin
    - **Constraints**:
      - Weight: 3000-3700kg (soft limit, prefers under 3700kg)
-     - Profit margin: ≤ 20% of receipt price
+     - Profit margin: ≤ 25% of receipt price
      - Inventory availability: Respects `final_quantity` from database
 
 8. **Receipt Processing API**
@@ -309,21 +313,29 @@ Content-Type: application/json
 
 ### Optimization Strategy
 
-The optimizer uses a **greedy algorithm** with the following steps:
+The optimizer uses a **greedy algorithm** with a two-pass approach:
 
 1. **Fixed Items** (always included):
    - Select 1 walking floor set matching `itemModelType`
    - Calculate and include aluminum bars based on `containerLength` and `slatType`
 
-2. **Variable Items Selection**:
-   - Groups available items by type (`steel_box`, `steel_i`, `steel_square`, `galvanized_sheet`)
-   - Selects at least one item from each available type (for variety)
-   - Prioritizes items with best weight-to-cost ratio (kg per VND)
-   - Fills remaining weight capacity with best-ratio items
+2. **Variable Items Selection** (Two-Pass):
+   - **Pass 1 - Weight-Contributing Items**:
+     - Groups items by type (steel, galvanized sheets, etc.)
+     - Selects at least one item from each available type (for variety)
+     - Prioritizes items with best weight-to-cost ratio (kg per VND)
+     - Fills remaining weight capacity with best-ratio items
+   - **Pass 2 - Zero-Weight Items**:
+     - Adds items like containers (weight = 0) to fill remaining budget
+     - These items don't affect weight but reduce profit margin
 
-3. **Constraints Enforcement**:
+3. **Supported Variable Item Types**:
+   - `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`, `steel_plate`
+   - `galvanized_sheet`, `stainless_steel`, `hydraulic_pump`, `container`
+
+4. **Constraints Enforcement**:
    - **Weight**: Targets 3000-3700kg range (soft limit at 3700kg)
-   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.20`
+   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.25`
    - **Inventory**: Respects `final_quantity` from latest inventory records
 
 ### Profit Calculation
@@ -332,7 +344,9 @@ The optimizer uses a **greedy algorithm** with the following steps:
 - **Unit Price**: Calculated as `final_value / final_quantity` from latest inventory record
 - **Profit**: `receiptPrice - totalCost`
 - **Profit Margin**: `(profit / receiptPrice) × 100%`
-- **Constraint**: Profit margin must be ≤ 20%
+- **Constraint**: Profit margin must be ≤ 25%
+
+**Note**: If the database doesn't have enough inventory to meet the profit margin target, the optimizer will use all available inventory and return the best possible result.
 
 ## Data Flow
 
