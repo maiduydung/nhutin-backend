@@ -9,7 +9,7 @@ class Optimizer:
 
     MIN_WEIGHT = 3000  # kg
     MAX_WEIGHT = 3700  # kg (soft limit)
-    MAX_PROFIT_MARGIN = 0.20  # 20%
+    MAX_PROFIT_MARGIN = 0.25  # 25%
 
     def __init__(self, db: Database):
         self.db = db
@@ -175,7 +175,7 @@ class Optimizer:
                 "unit": row[3],
                 "type": row[4],
                 "availableQuantity": int(row[5]),
-                "unitPrice": float(row[6]),
+                "unitPrice": float(row[7]),  # row[7] is unit_price (calculated: final_value / final_quantity)
             })
 
         return items
@@ -188,11 +188,12 @@ class Optimizer:
         receiptPrice: float,
     ) -> list[dict[str, Any]]:
         """
-        Simple greedy optimization: select items to fill weight range.
+        Greedy optimization: aggressively fill weight range to MAX_WEIGHT.
         Maximizes variety by selecting from different types.
         Respects profit margin constraint.
         """
-        targetWeight = (self.MIN_WEIGHT + self.MAX_WEIGHT) / 2 - fixedWeight
+        # Target maximum weight (be greedy!)
+        targetWeight = self.MAX_WEIGHT - fixedWeight
         remainingWeight = targetWeight
         selectedItems = []
         usedTypes = set()
@@ -210,7 +211,7 @@ class Optimizer:
         # Select at least one item from each available type (if budget allows)
         # Prioritize items with better weight-to-cost ratio
         for itemType, items in itemsByType.items():
-            if not items or remainingWeight <= 0:
+            if not items:
                 continue
             
             # Find best item from this type (best weight-to-cost ratio)
@@ -236,11 +237,20 @@ class Optimizer:
             weightPerUnit = self.weightCalculator.calculateItemWeight(
                 item["type"], item["unit"], 1, item["name"]
             )
-
-            # Calculate max quantity based on weight and budget
-            maxWeightQuantity = int(remainingWeight / weightPerUnit) if weightPerUnit > 0 else 0
-            maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else 0
             
+            if weightPerUnit <= 0:
+                continue
+
+            # Calculate max quantity - be greedy! Take ALL available if budget allows
+            # Calculate how much weight space we have left
+            currentTotalWeight = fixedWeight + sum(item["weight"] for item in selectedItems)
+            weightSpaceLeft = self.MAX_WEIGHT - currentTotalWeight
+            
+            # Take as much as possible - prioritize taking ALL available quantity
+            maxWeightQuantity = int(weightSpaceLeft / weightPerUnit) if weightPerUnit > 0 else item["availableQuantity"]
+            maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else item["availableQuantity"]
+            
+            # Be greedy - take maximum possible
             maxQuantity = min(
                 item["availableQuantity"],
                 maxWeightQuantity,
@@ -252,15 +262,16 @@ class Optimizer:
                 weight = weightPerUnit * quantity
                 totalValue = item["unitPrice"] * quantity
                 
-                # Double-check profit constraint
+                # Final budget check
                 if currentCost + totalValue > maxCost:
-                    # Try to take as much as budget allows
+                    # Take as much as budget allows
                     maxBudgetQty = int((maxCost - currentCost) / item["unitPrice"])
-                    if maxBudgetQty <= 0:
+                    if maxBudgetQty > 0:
+                        quantity = min(maxBudgetQty, item["availableQuantity"], maxWeightQuantity)
+                        weight = weightPerUnit * quantity
+                        totalValue = item["unitPrice"] * quantity
+                    else:
                         continue
-                    quantity = min(maxBudgetQty, item["availableQuantity"], maxWeightQuantity)
-                    weight = weightPerUnit * quantity
-                    totalValue = item["unitPrice"] * quantity
                 
                 selectedItems.append({
                     "id": item["id"],
@@ -273,7 +284,6 @@ class Optimizer:
                     "weight": weight,
                 })
                 
-                remainingWeight -= weight
                 currentCost += totalValue
                 usedTypes.add(itemType)
 
@@ -294,69 +304,101 @@ class Optimizer:
         # Sort by ratio (descending)
         itemsWithRatio.sort(key=lambda x: x[0], reverse=True)
 
-        for ratio, item in itemsWithRatio:
-            if currentCost >= maxCost:
-                break
+        # Keep filling until we reach MAX_WEIGHT or run out of budget
+        # Recalculate current weight after first phase
+        currentTotalWeight = fixedWeight + sum(item["weight"] for item in selectedItems)
+        
+        # Keep iterating until we can't add more
+        maxIterations = 20  # Prevent infinite loops
+        iteration = 0
+        
+        while iteration < maxIterations:
+            iteration += 1
+            addedSomething = False
+            previousWeight = currentTotalWeight
+            previousCost = currentCost
             
-            # Check if we've already selected this item
-            if item["id"] in selectedMap:
-                selectedItem = selectedMap[item["id"]]
-                # Calculate how much more we can add
-                alreadyTaken = selectedItem["quantity"]
-                remainingAvailable = item["availableQuantity"] - alreadyTaken
-            else:
-                selectedItem = None
-                alreadyTaken = 0
-                remainingAvailable = item["availableQuantity"]
-            
-            if remainingAvailable <= 0:
-                continue
-
-            weightPerUnit = self.weightCalculator.calculateItemWeight(
-                item["type"], item["unit"], 1, item["name"]
-            )
-
-            # Calculate max quantity based on weight and budget
-            maxWeightQuantity = int(remainingWeight / weightPerUnit) if weightPerUnit > 0 and remainingWeight > 0 else item["availableQuantity"]
-            maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else 0
-            
-            maxAdditionalQty = min(
-                remainingAvailable,
-                maxWeightQuantity,
-                maxBudgetQuantity
-            )
-            
-            if maxAdditionalQty > 0:
-                additionalWeight = weightPerUnit * maxAdditionalQty
-                additionalCost = item["unitPrice"] * maxAdditionalQty
+            for ratio, item in itemsWithRatio:
+                # Stop if we've reached max weight or budget
+                if currentTotalWeight >= self.MAX_WEIGHT or currentCost >= maxCost:
+                    break
                 
-                # Final check
-                if currentCost + additionalCost > maxCost:
+                # Check if we've already selected this item
+                if item["id"] in selectedMap:
+                    selectedItem = selectedMap[item["id"]]
+                    # Calculate how much more we can add
+                    alreadyTaken = selectedItem["quantity"]
+                    remainingAvailable = item["availableQuantity"] - alreadyTaken
+                else:
+                    selectedItem = None
+                    alreadyTaken = 0
+                    remainingAvailable = item["availableQuantity"]
+                
+                if remainingAvailable <= 0:
                     continue
 
-                if selectedItem:
-                    # Add to existing item
-                    selectedItem["quantity"] += maxAdditionalQty
-                    selectedItem["weight"] += additionalWeight
-                    selectedItem["totalValue"] += additionalCost
-                else:
-                    # Create new item entry
-                    newItem = {
-                        "id": item["id"],
-                        "code": item["code"],
-                        "name": item["name"],
-                        "unit": item["unit"],
-                        "quantity": maxAdditionalQty,
-                        "unitPrice": item["unitPrice"],
-                        "totalValue": additionalCost,
-                        "weight": additionalWeight,
-                    }
-                    selectedItems.append(newItem)
-                    selectedMap[item["id"]] = newItem
+                weightPerUnit = self.weightCalculator.calculateItemWeight(
+                    item["type"], item["unit"], 1, item["name"]
+                )
                 
-                remainingWeight -= additionalWeight
-                currentCost += additionalCost
+                if weightPerUnit <= 0:
+                    continue
 
+                # Calculate how much weight we still need
+                weightNeeded = self.MAX_WEIGHT - currentTotalWeight
+                
+                # Calculate max quantity - be greedy! Fill to MAX_WEIGHT
+                maxWeightQuantity = int(weightNeeded / weightPerUnit) if weightPerUnit > 0 else remainingAvailable
+                maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else remainingAvailable
+                
+                maxAdditionalQty = min(
+                    remainingAvailable,
+                    maxWeightQuantity,
+                    maxBudgetQuantity
+                )
+                
+                if maxAdditionalQty > 0:
+                    additionalWeight = weightPerUnit * maxAdditionalQty
+                    additionalCost = item["unitPrice"] * maxAdditionalQty
+                    
+                    # Final check - make sure we don't exceed budget
+                    if currentCost + additionalCost > maxCost:
+                        # Take as much as budget allows
+                        maxBudgetQty = int((maxCost - currentCost) / item["unitPrice"])
+                        if maxBudgetQty <= 0:
+                            continue
+                        maxAdditionalQty = min(maxBudgetQty, remainingAvailable)
+                        additionalWeight = weightPerUnit * maxAdditionalQty
+                        additionalCost = item["unitPrice"] * maxAdditionalQty
+
+                    if selectedItem:
+                        # Add to existing item
+                        selectedItem["quantity"] += maxAdditionalQty
+                        selectedItem["weight"] += additionalWeight
+                        selectedItem["totalValue"] += additionalCost
+                    else:
+                        # Create new item entry
+                        newItem = {
+                            "id": item["id"],
+                            "code": item["code"],
+                            "name": item["name"],
+                            "unit": item["unit"],
+                            "quantity": maxAdditionalQty,
+                            "unitPrice": item["unitPrice"],
+                            "totalValue": additionalCost,
+                            "weight": additionalWeight,
+                        }
+                        selectedItems.append(newItem)
+                        selectedMap[item["id"]] = newItem
+                    
+                    currentTotalWeight += additionalWeight
+                    currentCost += additionalCost
+                    addedSomething = True
+            
+            # If we didn't add anything this iteration, we're done
+            if currentTotalWeight == previousWeight and currentCost == previousCost:
+                break
+        
         return selectedItems
 
 
