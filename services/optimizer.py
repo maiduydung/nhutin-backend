@@ -140,16 +140,20 @@ class Optimizer:
         
         unitPrice = aluminumItem["unitPrice"]
         
-        # For weight boost, we're NOT limited by the profit margin constraint
-        # because adding cost REDUCES profit margin (which is what we want)
-        # We just need to make sure:
-        # 1. We don't exceed inventory
-        # 2. We add enough weight to reach MIN_WEIGHT
-        # 3. We don't exceed receiptPrice (cost can't be more than receipt)
+        # For weight boost, we want to add weight but still maintain a minimum profit margin
+        # Target: at least 10% profit margin (MIN_BOOST_PROFIT_MARGIN)
+        # This ensures we don't accidentally spend the entire receipt price
+        MIN_BOOST_PROFIT_MARGIN = 0.10  # 10% minimum profit after boost
+        maxCostAfterBoost = receiptPrice * (1 - MIN_BOOST_PROFIT_MARGIN)
+        budgetForBoost = maxCostAfterBoost - currentCost
+        
+        if budgetForBoost <= 0:
+            logger.warning(f"Cannot boost aluminum: already at {((receiptPrice - currentCost) / receiptPrice * 100):.1f}% margin")
+            return None
         
         maxByWeight = weightNeeded  # Aluminum weight = quantity in kg
         maxByInventory = remainingAvailable
-        maxByCost = (receiptPrice - currentCost) / unitPrice if unitPrice > 0 else remainingAvailable
+        maxByCost = budgetForBoost / unitPrice if unitPrice > 0 else remainingAvailable
         
         additionalQty = min(maxByWeight, maxByInventory, maxByCost)
         
@@ -485,15 +489,36 @@ class Optimizer:
                 usedTypes.add(itemType)
         
         # Step 2: Add zero-weight items (like containers) to fill budget
-        for item in zeroWeightItems:
+        # Prioritize containers first - they're essential for shipping!
+        containerFirst = sorted(
+            zeroWeightItems,
+            key=lambda x: (0 if x["type"] == "container" else 1, -x["unitPrice"])
+        )
+        
+        for item in containerFirst:
             if currentCost >= maxCost:
-                break
+                # For containers, we allow slightly exceeding budget (up to 85% of receipt)
+                # because a container is essential for shipping
+                if item["type"] == "container":
+                    extendedMaxCost = receiptPrice * 0.85
+                    if currentCost >= extendedMaxCost:
+                        logger.warning(f"Cannot add container - cost {currentCost:,.0f} exceeds extended budget {extendedMaxCost:,.0f}")
+                        break
+                    logger.info(f"Extending budget for container (essential item)")
+                else:
+                    break
             
             if item["unitPrice"] <= 0:
                 continue
             
-            budgetRemaining = maxCost - currentCost
+            effectiveMaxCost = receiptPrice * 0.85 if item["type"] == "container" else maxCost
+            budgetRemaining = effectiveMaxCost - currentCost
             maxQty = min(item["availableQuantity"], int(budgetRemaining / item["unitPrice"]))
+            
+            # For containers, we want at least 1 if budget allows
+            if item["type"] == "container" and maxQty <= 0 and item["availableQuantity"] > 0:
+                if item["unitPrice"] <= budgetRemaining:
+                    maxQty = 1
             
             if maxQty > 0:
                 totalValue = item["unitPrice"] * maxQty
