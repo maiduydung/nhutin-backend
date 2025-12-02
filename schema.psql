@@ -33,3 +33,22 @@ CREATE TABLE IF NOT EXISTS price_history (
     effective_at TIMESTAMP NOT NULL DEFAULT NOW(),
     UNIQUE (item_id, source, effective_at)
 );
+
+-- Aluminum bar constants table (lookup for weight calculations)
+CREATE TABLE IF NOT EXISTS aluminum_bar_constants (
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL,                 -- 'popular' or 'uncommon'
+    size_mm INTEGER NOT NULL,           -- Size in millimeters
+    thickness_mm INTEGER NOT NULL,      -- Thickness in millimeters
+    density_kg_per_m NUMERIC NOT NULL,  -- Density in kg/m
+    bars_per_container INTEGER NOT NULL, -- Number of bars per container
+    UNIQUE (size_mm, thickness_mm)      -- One constant per size+thickness combination
+);
+
+-- Insert initial aluminum bar constants data
+INSERT INTO aluminum_bar_constants (type, size_mm, thickness_mm, density_kg_per_m, bars_per_container)
+VALUES 
+    ('popular', 112, 6, 2.529, 21),
+    ('uncommon', 112, 8, 3.313, 21),
+    ('uncommon', 97, 6, 2.313, 24)
+ON CONFLICT (size_mm, thickness_mm) DO NOTHING;
