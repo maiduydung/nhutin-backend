@@ -1,6 +1,6 @@
 # NhuTin Backend
 
-Azure Functions-based inventory data ingestion service for NhuTin. Processes Vietnamese warehouse reports from Google Drive and stores them in PostgreSQL with automatic item classification, price tracking, and idempotent operations.
+Azure Functions-based inventory data ingestion service for NhuTin. Processes Vietnamese warehouse reports from Google Drive and stores them in PostgreSQL with automatic item classification, price tracking, and snapshot-based ingestion (MVP: wipes database before each ingestion).
 
 ---
 
@@ -29,12 +29,12 @@ Azure Functions-based inventory data ingestion service for NhuTin. Processes Vie
 - 🔄 **Parses Vietnamese inventory reports** with date extraction from row 2
 - 🏷️ **Auto-classifies items** into types (steel, fuel, equipment, etc.) with typo handling
 - 💰 **Tracks unit prices** from import/export transactions
-- 🗄️ **Stores data** in PostgreSQL with idempotent upsert operations
+- 🗄️ **Stores data** in PostgreSQL with snapshot-based ingestion (MVP)
 - ☁️ **Deploys as Azure Functions** with HTTP triggers
 
 ### Key Features
 
-- **Idempotent Operations**: Safe to run multiple times; handles conflicts gracefully using `ON CONFLICT` clauses
+- **Snapshot-Based Ingestion (MVP)**: Wipes database before each ingestion to match Excel snapshot exactly. Ensures deleted items from accounting software are also removed. All operations wrapped in transaction for safety.
 - **Intelligent Normalization**: Cleans messy user input, fixes typos, standardizes units
 - **Price History Tracking**: Automatically calculates and stores unit prices from import/export data
 - **Vietnamese Language Support**: Parses Vietnamese date formats and item names
@@ -188,9 +188,17 @@ Azure Functions-based inventory data ingestion service for NhuTin. Processes Vie
   - **SQL**: `INSERT INTO price_history (item_id, price, source, effective_at) VALUES (...) ON CONFLICT DO NOTHING`
   - **Note**: PostgreSQL infers conflict target from unique constraint `(item_id, source, effective_at)`
 
+- `_wipeDatabase(cursor)`
+  - **MVP snapshot behavior**: Wipes all existing data before ingestion
+  - Deletes in order: `price_history` → `inventory_records` → `items` (respects foreign key constraints)
+  - Ensures database matches Excel snapshot exactly (removes deleted items)
+  - Called automatically at start of ingestion within transaction
+
 - `ingestInventoryFromExcel(filePath: str)`
   - **Main ingestion method**
+  - **MVP Behavior**: Wipes existing database data before ingesting fresh snapshot
   - Initializes schema via `Database.initSchema()` (idempotent)
+  - Wipes all existing data via `_wipeDatabase()` (within transaction)
   - Reads row 2 (index 1) to extract date string
   - Reads data starting from row 6 (skiprows=5)
   - Column mapping:
@@ -571,14 +579,19 @@ CREATE TABLE IF NOT EXISTS price_history (
 4. **Schema Initialization**:
    - `Database.initSchema()` executes `schema.psql`
    - Creates tables if they don't exist (idempotent)
-5. **Date Extraction**:
+5. **Database Wipe (MVP Snapshot Behavior)**:
+   - `Inventory._wipeDatabase()` deletes all existing data
+   - Deletes in order: `price_history` → `inventory_records` → `items`
+   - Ensures database matches Excel snapshot exactly (removes deleted items)
+   - All operations within transaction (rollback on failure)
+6. **Date Extraction**:
    - Reads row 2 (index 1) from Excel
    - Parses Vietnamese date: `"Ngày DD tháng MM năm YYYY"`
    - Converts to `datetime` object
-6. **Data Parsing**:
+7. **Data Parsing**:
    - Reads data starting from row 6 (skiprows=5)
    - Maps columns: code, name, unit, quantities, values
-7. **For Each Row**:
+8. **For Each Row**:
    - **Skip** if `code` or `name` is missing
    - **Normalize**:
      - Clean code (remove quotes, spaces → underscores)
@@ -597,21 +610,29 @@ CREATE TABLE IF NOT EXISTS price_history (
    - **Insert Price History**:
      - `INSERT INTO price_history (item_id, price, source, effective_at) ... ON CONFLICT DO NOTHING`
      - Note: Uses `ON CONFLICT DO NOTHING` without explicit conflict target; PostgreSQL infers from unique constraint `(item_id, source, effective_at)`
-8. **Transaction Commit**:
-   - Commits all changes on success
-   - Rolls back on any error
-9. **Response**:
+9. **Transaction Commit**:
+   - Commits all changes on success (wipe + ingestion)
+   - Rolls back on any error (restores previous database state)
+10. **Response**:
    - Returns JSON: `{"status": "ok", "filePath": "/tmp/..."}`
 
-### Idempotency Guarantees
+### Snapshot Behavior (MVP)
 
-| Operation | Conflict Handling | Result |
-|-----------|------------------|--------|
-| Items | `ON CONFLICT (code) DO UPDATE` | Updates name, type, unit |
-| Inventory Records | `ON CONFLICT (item_id, record_date) DO UPDATE` | Updates all quantity/value fields |
-| Price History | `ON CONFLICT (item_id, source, effective_at) DO NOTHING` | Skips duplicates |
+**Current Implementation**: Database is wiped before each ingestion to match Excel snapshot exactly.
 
-**Safe to run multiple times**: Same Excel file can be ingested repeatedly without creating duplicates
+| Step | Operation | Description |
+|------|-----------|-------------|
+| 1 | Wipe Database | Deletes all `price_history`, `inventory_records`, and `items` |
+| 2 | Ingest Fresh Data | Inserts all items from Excel file |
+| 3 | Transaction Safety | All operations in single transaction (rollback on failure) |
+
+**Benefits**:
+- Database always matches Excel snapshot exactly
+- Deleted items from accounting software are automatically removed
+- No orphaned or stale data
+- Transaction safety ensures data integrity
+
+**Note**: `ON CONFLICT` clauses in INSERT statements remain for safety but are redundant after wipe (no conflicts possible).
 
 ---
 

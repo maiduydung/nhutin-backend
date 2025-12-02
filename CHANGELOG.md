@@ -1,5 +1,12 @@
 # Changelog
 
+## 2025-01-XX
+- Added database wipe functionality before ingestion (MVP snapshot behavior).
+- `Inventory.ingestInventoryFromExcel()` now wipes all existing data before ingesting fresh snapshot.
+- Added `_wipeDatabase()` method that deletes data in correct order: `price_history` → `inventory_records` → `items`.
+- All wipe and ingestion operations wrapped in single transaction for safety (rollback on failure).
+- Ensures database matches Excel snapshot exactly, including removal of deleted items.
+
 ## 2025-11-27
 - Added `IF NOT EXISTS` to all `CREATE TABLE` statements in `schema.psql`.
 - Added `Database.initSchema()` method to auto-initialize tables before ingestion.

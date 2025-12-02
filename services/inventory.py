@@ -58,12 +58,36 @@ class Inventory:
         )
 
     @staticmethod
+    def _wipeDatabase(cursor):
+        """
+        Wipe all existing data from the database tables.
+        Deletes in order: price_history → inventory_records → items
+        to respect foreign key constraints.
+        """
+        logger.info("🗑️  Wiping existing database data...")
+        
+        # Delete in order: child tables first, then parent table
+        cursor.execute("DELETE FROM price_history;")
+        logger.info("   ✓ Deleted all price_history records")
+        
+        cursor.execute("DELETE FROM inventory_records;")
+        logger.info("   ✓ Deleted all inventory_records")
+        
+        cursor.execute("DELETE FROM items;")
+        logger.info("   ✓ Deleted all items")
+        
+        logger.info("✅ Database wipe complete")
+
+    @staticmethod
     def ingestInventoryFromExcel(filePath: str):
         """
         Ingest inventory data from Excel file and store in database.
         Extracts record date from row 2, data from row 6+.
         Also calculates and stores unit prices in price_history.
         Automatically initializes schema if tables don't exist.
+        
+        For MVP: Wipes existing database data before ingesting fresh snapshot.
+        All operations are wrapped in a transaction for safety.
         """
         # Ensure schema exists before ingestion
         Database.initSchema()
@@ -72,6 +96,10 @@ class Inventory:
         cursor = connection.cursor()
 
         try:
+            # Wipe existing data before ingesting fresh snapshot
+            # This ensures deleted items from the accounting software are also removed here
+            Inventory._wipeDatabase(cursor)
+            
             # Read row 2 (index 1) to extract the date
             dfDate = pd.read_excel(filePath, sheet_name=0, header=None, nrows=2)
             dateString = str(dfDate.iloc[1, 0]) if len(dfDate) > 1 else ""
@@ -182,6 +210,7 @@ class Inventory:
         except Exception as e:
             connection.rollback()
             logger.error(f"❌ Error during ingestion: {e}")
+            logger.error("🔄 Transaction rolled back - database state unchanged")
             raise
         finally:
             cursor.close()
