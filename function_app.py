@@ -57,6 +57,7 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
             itemModelType=userInput.itemModelType,
             slatType=userInput.slatType,
             receiptPrice=userInput.receiptPrice,
+            containerType=userInput.containerType,
         )
 
         responsePayload = {

@@ -301,6 +301,40 @@ if currentTotalWeight == previousWeight and currentCost == previousCost:
 
 **Result**: ~3625 kg total weight, within 3000-3700 kg range
 
+## Aluminum Boost for Weight
+
+When total weight is below MIN_WEIGHT (3000 kg) after optimization, the algorithm automatically adds more aluminum bars:
+
+```python
+if totalWeight < MIN_WEIGHT:
+    weightNeeded = MIN_WEIGHT - totalWeight
+    additionalAluminum = min(weightNeeded, availableInventory, maxAffordable)
+    aluminumItem["quantity"] += additionalAluminum
+```
+
+**Key insight**: Adding aluminum INCREASES cost which DECREASES profit margin. So boosting aluminum achieves both:
+1. Increases weight toward MIN_WEIGHT target
+2. Reduces profit margin (more efficient use of receipt price)
+
+**Example**:
+- Before boost: 2,564 kg, 25.00% margin
+- After boost: 3,000 kg, 10.06% margin (added 436 kg aluminum)
+
+## Container Validation and Fallback
+
+The optimizer validates the requested container type against available inventory:
+
+```python
+if requestedContainer not in database:
+    logger.error(f"Requested {size}ft container not found. Using fallback.")
+    return availableContainers[0]  # Use any available container
+```
+
+**Example**:
+- Request: `container_40ft` (not in DB)
+- Error logged: "Requested 40ft container not found. Available: ['20ft']"
+- Fallback: Uses "Vỏ container 20 feet đã qua sử dụng"
+
 ## Future Improvements
 
 1. **Multi-objective Optimization**: Balance weight, cost, and variety more intelligently

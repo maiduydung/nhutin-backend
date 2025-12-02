@@ -21,6 +21,7 @@ class Optimizer:
         itemModelType: str,
         slatType: str,
         receiptPrice: float,
+        containerType: str = None,
     ) -> dict[str, Any]:
         """
         Main optimization function.
@@ -46,8 +47,8 @@ class Optimizer:
             + aluminumItem["unitPrice"] * aluminumItem["quantity"]
         )
 
-        # Get variable items for optimization
-        variableItems = self._getVariableItems()
+        # Get variable items for optimization (with container validation)
+        variableItems = self._getVariableItems(containerType)
 
         # Optimize variable items
         selectedItems = self._optimizeVariableItems(
@@ -60,6 +61,28 @@ class Optimizer:
         # Calculate totals
         totalWeight = sum(item["weight"] for item in allItems)
         totalCost = sum(item["totalValue"] for item in allItems)
+        
+        # If weight is below MIN_WEIGHT, try to add more aluminum
+        # Adding aluminum increases cost and DECREASES profit margin (which is good!)
+        if totalWeight < self.MIN_WEIGHT:
+            additionalAluminum = self._boostAluminumForWeight(
+                aluminumItem, totalWeight, totalCost, receiptPrice
+            )
+            if additionalAluminum:
+                # Update aluminum item with additional quantity
+                aluminumItem["quantity"] += additionalAluminum["additionalQty"]
+                aluminumItem["weight"] += additionalAluminum["additionalWeight"]
+                aluminumItem["totalValue"] += additionalAluminum["additionalCost"]
+                
+                # Recalculate totals
+                totalWeight += additionalAluminum["additionalWeight"]
+                totalCost += additionalAluminum["additionalCost"]
+                
+                logger.info(
+                    f"Boosted aluminum by {additionalAluminum['additionalQty']:.2f} kg "
+                    f"to reach weight {totalWeight:.2f} kg"
+                )
+
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
 
@@ -70,6 +93,87 @@ class Optimizer:
             "receiptPrice": receiptPrice,
             "profit": round(profit, 2),
             "profitMargin": round(profitMargin, 2),
+        }
+    
+    def _boostAluminumForWeight(
+        self,
+        aluminumItem: dict[str, Any],
+        currentWeight: float,
+        currentCost: float,
+        receiptPrice: float,
+    ) -> dict[str, Any] | None:
+        """
+        Add more aluminum bars when weight is below MIN_WEIGHT.
+        
+        Note: Adding aluminum INCREASES cost which DECREASES profit margin.
+        So this boost helps achieve both weight and profit margin targets.
+        
+        Returns additional aluminum info or None if not possible.
+        """
+        weightNeeded = self.MIN_WEIGHT - currentWeight
+        if weightNeeded <= 0:
+            return None
+        
+        # Get aluminum inventory availability
+        result = self.db.executeQuery(
+            """
+            SELECT ir.final_quantity
+            FROM inventory_records ir
+            JOIN items i ON ir.item_id = i.id
+            WHERE i.type = 'aluminum'
+            ORDER BY ir.record_date DESC
+            LIMIT 1
+            """
+        )
+        
+        if not result:
+            logger.warning("No aluminum inventory available for weight boost")
+            return None
+        
+        availableQty = float(result[0][0])
+        alreadyUsed = aluminumItem["quantity"]
+        remainingAvailable = availableQty - alreadyUsed
+        
+        if remainingAvailable <= 0:
+            logger.warning("No additional aluminum available for weight boost")
+            return None
+        
+        unitPrice = aluminumItem["unitPrice"]
+        
+        # For weight boost, we're NOT limited by the profit margin constraint
+        # because adding cost REDUCES profit margin (which is what we want)
+        # We just need to make sure:
+        # 1. We don't exceed inventory
+        # 2. We add enough weight to reach MIN_WEIGHT
+        # 3. We don't exceed receiptPrice (cost can't be more than receipt)
+        
+        maxByWeight = weightNeeded  # Aluminum weight = quantity in kg
+        maxByInventory = remainingAvailable
+        maxByCost = (receiptPrice - currentCost) / unitPrice if unitPrice > 0 else remainingAvailable
+        
+        additionalQty = min(maxByWeight, maxByInventory, maxByCost)
+        
+        if additionalQty <= 0:
+            return None
+        
+        additionalWeight = additionalQty  # For aluminum, weight = quantity in kg
+        additionalCost = additionalQty * unitPrice
+        
+        # Calculate new profit margin after boost
+        newTotalCost = currentCost + additionalCost
+        newProfit = receiptPrice - newTotalCost
+        newProfitMargin = (newProfit / receiptPrice) * 100 if receiptPrice > 0 else 0
+        
+        logger.info(
+            f"Weight boost: Adding {additionalQty:.2f} kg aluminum "
+            f"(needed: {weightNeeded:.2f} kg, available: {remainingAvailable:.2f} kg, "
+            f"new margin: {newProfitMargin:.2f}%)"
+        )
+        
+        return {
+            "additionalQty": round(additionalQty, 2),
+            "additionalWeight": round(additionalWeight, 2),
+            "additionalCost": round(additionalCost, 2),
         }
 
     def _getWalkingFloorItem(
@@ -148,11 +252,15 @@ class Optimizer:
             "weight": round(aluminumWeight, 2),
         }
 
-    def _getVariableItems(self) -> list[dict[str, Any]]:
+    def _getVariableItems(self, containerType: str = None) -> list[dict[str, Any]]:
         """Get all variable items available for optimization.
         
         Includes all item types except walking floors and aluminum (which are fixed items).
         This allows the optimizer to use whatever inventory is available.
+        
+        Args:
+            containerType: Optional container type (e.g., "container_40ft", "container_20ft")
+                          Used to validate and filter container items.
         """
         # Include all item types that can be used as variable items
         # Excludes: walking_floor_*, aluminum (these are fixed items)
@@ -179,18 +287,90 @@ class Optimizer:
         )
 
         items = []
+        containerItems = []
+        requestedContainerSize = None
+        
+        # Parse requested container size from containerType (e.g., "container_40ft" -> "40")
+        if containerType:
+            if "40" in containerType:
+                requestedContainerSize = "40"
+            elif "20" in containerType:
+                requestedContainerSize = "20"
+        
         for row in result:
-            items.append({
+            item = {
                 "id": row[0],
                 "code": row[1],
                 "name": row[2],
                 "unit": row[3],
                 "type": row[4],
                 "availableQuantity": int(row[5]),
-                "unitPrice": float(row[7]),  # row[7] is unit_price (calculated: final_value / final_quantity)
-            })
-
+                "unitPrice": float(row[7]),
+            }
+            
+            # Handle container items separately for validation
+            if item["type"] == "container":
+                containerItems.append(item)
+            else:
+                items.append(item)
+        
+        # Container validation and fallback
+        if containerItems:
+            selectedContainer = self._selectContainerWithFallback(
+                containerItems, requestedContainerSize
+            )
+            if selectedContainer:
+                items.append(selectedContainer)
+        
         return items
+    
+    def _selectContainerWithFallback(
+        self,
+        containerItems: list[dict[str, Any]],
+        requestedSize: str = None
+    ) -> dict[str, Any] | None:
+        """
+        Select container item with fallback logic.
+        If requested container size is not available, use any available container.
+        
+        Args:
+            containerItems: List of available container items
+            requestedSize: Requested container size ("20" or "40")
+        
+        Returns:
+            Selected container item or None if no containers available
+        """
+        if not containerItems:
+            return None
+        
+        # Try to find the requested container size
+        if requestedSize:
+            for container in containerItems:
+                containerName = container["name"].lower()
+                if requestedSize in containerName:
+                    logger.info(f"Found requested {requestedSize}ft container: {container['name']}")
+                    return container
+            
+            # Requested container not found - log error and use fallback
+            availableSizes = []
+            for c in containerItems:
+                if "40" in c["name"]:
+                    availableSizes.append("40ft")
+                elif "20" in c["name"]:
+                    availableSizes.append("20ft")
+            
+            logger.error(
+                f"Requested {requestedSize}ft container not found in database. "
+                f"Available containers: {availableSizes}. Using fallback."
+            )
+        
+        # Fallback: use the first available container
+        fallbackContainer = containerItems[0]
+        logger.warning(
+            f"Using fallback container: {fallbackContainer['name']} "
+            f"(requested: {requestedSize}ft)"
+        )
+        return fallbackContainer
 
     def _optimizeVariableItems(
         self,

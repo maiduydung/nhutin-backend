@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-12-02
+
+### Added
+
+#### Aluminum Boost for Weight
+- When total weight is below MIN_WEIGHT (3000 kg), optimizer now automatically adds more aluminum bars
+- Adding aluminum increases cost, which reduces profit margin (achieving both targets)
+- Example: 2,564 kg → 3,000 kg by adding 436 kg aluminum, margin reduced from 25% to 10%
+
+#### Container Validation and Fallback
+- Added validation for requested container type against database inventory
+- If requested container (e.g., 40ft) is not available, logs ERROR and uses fallback container
+- Log message: "Requested 40ft container not found in database. Available: ['20ft']. Using fallback."
+
+### Changed
+
+#### Optimizer (`services/optimizer.py`)
+- Added `containerType` parameter to `optimize()` method
+- Added `_boostAluminumForWeight()` method for weight boosting logic
+- Added `_selectContainerWithFallback()` method for container validation
+- Updated `_getVariableItems()` to accept `containerType` for filtering
+
+#### Function App (`function_app.py`)
+- Now passes `containerType` from user input to optimizer
+
+### Performance
+
+For a 20ft container with 360M VND receipt price:
+| Metric | Before | After (with boost) |
+|--------|--------|-------------------|
+| Total Weight | 2,564 kg | 3,000 kg |
+| Profit Margin | 25.00% | 10.06% |
+| Aluminum Qty | 417 kg | 854 kg |
+
+---
+
 ## [1.1.0] - 2025-12-02
 
 ### Added
