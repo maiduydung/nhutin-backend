@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from config import logger
 from models.user_input import UserInput
 from services.database import Database
+from services.optimizer import Optimizer
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 database = Database()
@@ -49,9 +50,23 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400,
             )
 
+        # Run optimization
+        optimizer = Optimizer(database)
+        result = optimizer.optimize(
+            containerLength=userInput.containerLength,
+            itemModelType=userInput.itemModelType,
+            slatType=userInput.slatType,
+            receiptPrice=userInput.receiptPrice,
+        )
+
         responsePayload = {
             "status": "ok",
-            "userInput": userInput.model_dump(),
+            "items": result["items"],
+            "totalWeight": result["totalWeight"],
+            "totalCost": result["totalCost"],
+            "receiptPrice": result["receiptPrice"],
+            "profit": result["profit"],
+            "profitMargin": result["profitMargin"],
         }
         return func.HttpResponse(
             body=json.dumps(responsePayload, default=str),

@@ -41,7 +41,9 @@ nhutin-backend/
 ├── services/
 │   ├── database.py         # PostgreSQL database connection wrapper
 │   ├── inventory.py         # Inventory data ingestion from Excel files
-│   └── fetcher.py           # Google Drive file fetcher
+│   ├── fetcher.py           # Google Drive file fetcher
+│   ├── weight_calculator.py # Weight calculation utilities for different item types
+│   └── optimizer.py         # Container weight and profit optimization engine
 ├── data/                    # Sample data files (Excel, PDFs, images)
 └── docs/
     └── RULES.md             # Development and coding standards
@@ -117,7 +119,19 @@ Stores historical pricing information for items from various sources.
 
 **Foreign Key**: `item_id` → `items.id`
 
-**Note**: This table is not defined in `schema.psql` but exists in the production database. Consider adding it to the schema file.
+#### `aluminum_bar_constants`
+Stores constants for calculating aluminum bar weights based on slat specifications.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | SERIAL PRIMARY KEY | Record identifier |
+| `type` | TEXT | Bar type ("popular" or "uncommon") |
+| `size_mm` | INTEGER | Slat size in millimeters (e.g., 97, 112) |
+| `thickness_mm` | INTEGER | Bar thickness in millimeters (e.g., 6, 8) |
+| `density_kg_per_m` | NUMERIC | Weight density in kg per meter |
+| `bars_per_container` | INTEGER | Number of bars per container (21 or 24) |
+
+**Usage**: Used to calculate aluminum bar weight: `containerLength × density_kg_per_m × bars_per_container`
 
 ## API Endpoints
 
@@ -145,46 +159,55 @@ Content-Type: application/json
 ```json
 {
   "containerType": "container_20ft",      // or "container_40ft", etc.
-  "containerLength": 6.06,               // Length in meters
-  "itemModelType": "R2DX",               // Item model code
-  "slatType": "97mm"                     // Slat specification
+  "containerLength": 6.096,              // Length in meters (e.g., 6.096 for 20ft container)
+  "itemModelType": "R2DX",               // Walking floor model: "R2DX", "KSD", or "KMD"
+  "slatType": "97mm",                    // Slat specification: "97mm" or "112mm"
+  "receiptPrice": 600000000              // Receipt price in VND
 }
 ```
 
-**Current Response** (validation only - optimization not yet implemented):
+**Response:**
 ```json
 {
   "status": "ok",
-  "userInput": {
-    "containerType": "container_20ft",
-    "containerLength": 6.06,
-    "itemModelType": "R2DX",
-    "slatType": "97mm"
-  }
-}
-```
-
-**Expected Future Response** (to be implemented):
-```json
-{
-  "status": "ok",
-  "optimizedItems": [
+  "items": [
     {
-      "itemCode": "R2DX 4.0\" 21X112MM 23072025 US",
-      "itemName": "Sàn di động để xếp dỡ hàng hóa...",
-      "quantity": 7,
-      "unit": "Bộ",
-      "unitPrice": 248802602,
-      "totalValue": 1741618214,
-      "weight": 3500.0
+      "id": 96,
+      "code": "R2DX_4.0_21X112MM_23072025_US",
+      "name": "Sàn di động để xếp dỡ hàng hóa...",
+      "unit": "set",
+      "quantity": 1,
+      "unitPrice": 248802602.0,
+      "totalValue": 248802602.0,
+      "weight": 751.0
+    },
+    {
+      "id": 95,
+      "code": "Nhôm_thanh_none",
+      "name": "Nhôm thanh None",
+      "unit": "kg",
+      "quantity": 338.4,
+      "unitPrice": 123433.0,
+      "totalValue": 41770170.0,
+      "weight": 338.4
     }
+    // ... more items
   ],
-  "totalWeight": 3500.0,
-  "totalValue": 1741618214,
-  "profitMargin": 15.5,
-  "receiptValue": 2000000000
+  "totalWeight": 3287.39,
+  "totalCost": 476137382.0,
+  "receiptPrice": 600000000.0,
+  "profit": 123862618.0,
+  "profitMargin": 20.64
 }
 ```
+
+**Response Fields:**
+- `items`: Array of optimized items with quantities, prices, and weights
+- `totalWeight`: Total weight in kg (target: 3000-3700kg)
+- `totalCost`: Total cost of all items in VND
+- `receiptPrice`: Input receipt price in VND
+- `profit`: Calculated profit (receiptPrice - totalCost)
+- `profitMargin`: Profit margin percentage (must be ≤ 20%)
 
 ## Database Statistics (as of inspection)
 
@@ -205,6 +228,7 @@ Content-Type: application/json
 ## Current Implementation Status
 
 ### ✅ Implemented
+
 1. **Database Infrastructure**
    - PostgreSQL connection wrapper (`services/database.py`)
    - Database schema defined (`schema.psql`)
@@ -232,68 +256,83 @@ Content-Type: application/json
    - Multi-source config loading (`config.py`)
    - Supports: `local.settings.json`, environment variables
    - Azure Key Vault integration (prepared but commented out)
+   - Walking floor weight constants (`WALKING_FLOORS` dictionary)
 
-### ❌ Not Yet Implemented (Core Features)
+6. **Weight Calculation System** (`services/weight_calculator.py`)
+   - Walking floor weight lookup from config (R2DX: 751kg, KSD: 503kg, KMD: 502kg)
+   - Aluminum bar weight calculation from `aluminum_bar_constants` table
+   - Galvanized sheet weight calculation (formula: thickness × width × 7850 / 1,000,000)
+   - Support for different unit types (kg, set, m)
 
-1. **Item Selection Logic**
-   - Querying items by `itemModelType` (e.g., "R2DX")
-   - Filtering by container specifications (`containerType`, `containerLength`, `slatType`)
-   - Determining which items are needed for a specific container build
+7. **Optimization Engine** (`services/optimizer.py`)
+   - **Fixed Items Selection**:
+     - Always includes 1 walking floor set (based on `itemModelType`)
+     - Always includes aluminum bars (calculated from `containerLength` and `slatType`)
+   - **Variable Items Optimization**:
+     - Selects from: `steel_box`, `steel_i`, `steel_square`, `galvanized_sheet`
+     - Maximizes variety (uses multiple item types)
+     - Greedy algorithm prioritizing weight-to-cost ratio
+   - **Constraints**:
+     - Weight: 3000-3700kg (soft limit, prefers under 3700kg)
+     - Profit margin: ≤ 20% of receipt price
+     - Inventory availability: Respects `final_quantity` from database
 
-2. **Weight Optimization Algorithm**
-   - Calculating item weights (weight data not currently in schema)
-   - Optimizing item combinations to achieve 3000-3700kg target
-   - Handling multiple item types and quantities
+8. **Receipt Processing API**
+   - Full optimization pipeline integrated
+   - Returns optimized item list with weights and costs
+   - Calculates profit margin and validates constraints
 
-3. **Profit Calculation**
-   - Receipt value calculation
-   - Profit margin computation
-   - Ensuring profit < 20% of receipt value
-   - Cost vs. selling price logic
+## Optimization Algorithm Details
 
-4. **Optimization Engine**
-   - Constraint satisfaction (weight range, profit margin)
-   - Item quantity optimization
-   - Multiple solution generation/ranking
+### Weight Calculation Methods
 
-## Key Questions for Implementation
+1. **Walking Floor Sets** (`unit = "set"`):
+   - Weight retrieved from `config.WALKING_FLOORS` dictionary
+   - R2DX: 751 kg per set
+   - KSD: 503 kg per set
+   - KMD: 502 kg per set
 
-### 1. Item-Container Relationship
-- **Q**: How do we determine which items are needed for a given container type/length/model?
-  - Is there a bill of materials (BOM) table or mapping?
-  - Are there formulas based on container length?
-  - How does `slatType` affect item selection?
+2. **Aluminum Bars**:
+   - Formula: `containerLength × density_kg_per_m × bars_per_container`
+   - Density and bars count from `aluminum_bar_constants` table
+   - Selected based on `slatType` (97mm or 112mm)
+   - System checks inventory availability and falls back to lower density if needed
 
-### 2. Weight Data
-- **Q**: Where is item weight stored?
-  - Is it in the `items` table (needs schema update)?
-  - Is it calculated from item dimensions?
-  - Is it in a separate table or external data source?
+3. **Steel Items** (`unit = "kg"`):
+   - Weight equals quantity (quantity is already in kilograms)
+   - Applies to: `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`
 
-### 3. Profit Calculation
-- **Q**: How is profit calculated?
-  - Receipt value = selling price to customer?
-  - Cost = sum of `final_value` from inventory_records?
-  - Profit = Receipt Value - Cost?
-  - Which `record_date` should be used for pricing (latest? specific date?)?
+4. **Galvanized Sheets** (`unit = "m"`):
+   - Formula: `Thickness (mm) × Width (mm) × 7850 / 1,000,000 = kg/m`
+   - Dimensions extracted from item name (e.g., "0.95 x 1200" → 0.95mm × 1200mm)
+   - Density of galvanized steel: 7850 kg/m³
 
-### 4. Optimization Constraints
-- **Q**: What are the optimization priorities?
-  - Maximize profit while staying under 20%?
-  - Minimize weight variance from target (e.g., 3350kg)?
-  - Are there other constraints (availability, lead time, etc.)?
+### Optimization Strategy
 
-### 5. Item Availability
-- **Q**: How do we check item availability?
-  - Use `final_quantity` from latest `record_date`?
-  - What if multiple items are needed but quantities are limited?
-  - Should we consider `exported_quantity` to avoid double-booking?
+The optimizer uses a **greedy algorithm** with the following steps:
 
-### 6. Container Specifications
-- **Q**: What do container types mean?
-  - `container_20ft` vs `container_40ft` - different item requirements?
-  - How does `containerLength` affect item quantities (linear relationship?)?
-  - What is `slatType` and how does it impact the build?
+1. **Fixed Items** (always included):
+   - Select 1 walking floor set matching `itemModelType`
+   - Calculate and include aluminum bars based on `containerLength` and `slatType`
+
+2. **Variable Items Selection**:
+   - Groups available items by type (`steel_box`, `steel_i`, `steel_square`, `galvanized_sheet`)
+   - Selects at least one item from each available type (for variety)
+   - Prioritizes items with best weight-to-cost ratio (kg per VND)
+   - Fills remaining weight capacity with best-ratio items
+
+3. **Constraints Enforcement**:
+   - **Weight**: Targets 3000-3700kg range (soft limit at 3700kg)
+   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.20`
+   - **Inventory**: Respects `final_quantity` from latest inventory records
+
+### Profit Calculation
+
+- **Cost**: Sum of `(quantity × unitPrice)` for all selected items
+- **Unit Price**: Calculated as `final_value / final_quantity` from latest inventory record
+- **Profit**: `receiptPrice - totalCost`
+- **Profit Margin**: `(profit / receiptPrice) × 100%`
+- **Constraint**: Profit margin must be ≤ 20%
 
 ## Data Flow
 

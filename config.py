@@ -75,3 +75,19 @@ POSTGRES_PASSWORD = get_config("POSTGRES_PASSWORD")
 POSTGRES_HOST = get_config("POSTGRES_HOST")
 POSTGRES_PORT = get_config("POSTGRES_PORT")
 POSTGRES_DATABASE = get_config("POSTGRES_DATABASE")
+
+WALKING_FLOORS = {
+    # Weight of each walking floor type in kg, used for weight optimization and Items.type lookup
+    "KSD": {
+        "type": "walking_floor_ksd",
+        "weight": 503,
+    },
+    "KMD": {
+        "type": "walking_floor_kmd",
+        "weight": 502,
+    },
+    "R2DX": {
+        "type": "walking_floor_r2dx",
+        "weight": 751,
+    },
+}
