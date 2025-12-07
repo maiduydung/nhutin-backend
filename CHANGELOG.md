@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2025-12-07
+
+### Fixed
+
+#### Duplicate Items Bug
+- **Critical Fix**: Fixed issue where steel and galvanized sheet items appeared twice in results (once as regular items, once as container build materials)
+- Added exclusion logic in `_optimizeVariableItems()` "fill remaining weight" loop to skip container build material types
+- Items now correctly appear in only ONE category: either regular items OR container build materials
+
+### Changed
+
+#### Container Specifications (Based on THUYETMINHKYTHUAT.pdf)
+- Updated container specs to match technical document "Walking Floor S-Drive KSD 4.25"
+- New material requirements based on actual engineering specifications:
+
+| Size | Steel Frame (kg) | Galvanized Sheet (m) | Aluminum (kg) | Source Reference |
+|------|------------------|----------------------|---------------|------------------|
+| 20ft | 492 | 50 | 378 | ~50% of 40ft |
+| 40ft | 983 | 100 | 757 | THUYETMINHKYTHUAT.pdf |
+
+**40ft Container Breakdown (from technical document):**
+- **Aluminum bars**: 756.76 kg (25 bars × 12m × 2.53 kg/m) - 21 for floor slats + 4 accessories
+- **Steel frame**: ~983 kg total
+  - Sắt hộp vuông kẽm: 332.34 kg (~55m hộp 80×40 or 100×50)
+  - Thép vuông kẽm: 398.48 kg (~124m thép 40×40mm)
+  - Thép vuông mạ kẽm: 252.41 kg (~84m thép 30-40×40mm)
+
+#### Configuration (`config.py`)
+- Added `CONTAINER_BUILD_SPECS` dictionary with detailed material requirements
+- Added `CONTAINER_MATERIAL_TYPES` mapping for database item type lookups
+- Added `MATERIAL_SUBSTITUTES` for flexible material substitution rules
+
+#### Optimizer Improvements
+- Added `containerBuildItemIds` parameter to track items used for container building
+- Added `containerBuildTypes` constant for material type exclusion
+- Both ID-based and type-based exclusion now applied consistently across all selection loops
+
+### Technical Notes
+- Container building now uses lower threshold (50%) for material availability
+- Material substitution: aluminum can replace steel shortfall at 1:1 weight ratio
+- Specs reference: `data/THAICUONG 23062025 THUYETMINHKYTHUAT.pdf`
+
+---
+
+## [1.3.0] - 2025-12-07
+
+### Added
+
+#### Container Building from Materials
+- **New Feature**: When requested container type (20ft or 40ft) is not in inventory, the system now automatically builds it from raw materials
+- **Container Builder Service** (`services/container_builder.py`):
+  - `ContainerBuilder` class for building containers from steel, galvanized sheets, and aluminum
+  - `canBuildContainer()` - Check if materials are available to build a container
+  - `buildContainer()` - Build container with budget and weight constraints
+  - Supports scaled building (minimum 10%) when constraints are tight
+  - **Flexible Material Substitution**: If not enough steel, uses aluminum to compensate
+
+#### Container Specifications
+| Size | Steel (kg) | Galvanized Sheet (m) | Aluminum (kg) |
+|------|------------|----------------------|---------------|
+| 20ft | 800 | 50 | 100 |
+| 40ft | 1500 | 100 | 200 |
+
+#### Key Features
+- **Steel Shortfall Compensation**: When steel inventory is insufficient, aluminum automatically fills the gap
+- **Shared Aluminum Pool**: When building containers, aluminum serves both as structure AND slats (no double-counting)
+- **Budget-Aware Scaling**: Container build scales down automatically when budget is limited
+
+#### Test Suite
+- Added `tests/` directory with comprehensive test coverage
+- `tests/test_container_builder.py` - Unit tests for ContainerBuilder service
+- `tests/test_optimizer_container_build.py` - Tests for optimizer integration
+- `tests/test_integration_container_build.py` - Integration tests with real database
+
+### Changed
+
+#### Optimizer (`services/optimizer.py`)
+- Added `ContainerBuilder` integration
+- Added `_checkNeedToBuildContainer()` method to detect when container building is needed
+- Modified `optimize()` to build containers from materials when unavailable
+- Modified `_optimizeVariableItems()` to skip containers when building from materials
+- Response now includes `containerBuiltFromMaterials: boolean` field
+
+#### Function App (`function_app.py`)
+- Response now includes `containerBuiltFromMaterials` field
+
+### Response Example (Container Built from Materials)
+```json
+{
+  "status": "ok",
+  "items": [
+    {"code": "thephop", "quantity": 800, "weight": 800, "forContainerBuild": true},
+    {"code": "ton_ma_kem", "quantity": 50, "weight": 447, "forContainerBuild": true},
+    {"code": "nhom_thanh", "quantity": 100, "weight": 100, "forContainerBuild": true}
+  ],
+  "containerBuiltFromMaterials": true,
+  "totalWeight": 3200.0,
+  "profitMargin": 18.5
+}
+```
+
+### Documentation
+- Updated `docs/ALGORITHM.md` with container building section
+- Updated `README.md` with container builder documentation
+
+---
+
 ## [1.2.0] - 2025-12-02
 
 ### Added

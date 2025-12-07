@@ -42,6 +42,7 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
 
         try:
             userInput = UserInput.model_validate(body or {})
+            logger.info(f"✅ User input: {userInput}")
         except ValidationError as validationError:
             logger.warning(f"❌ Validation failed: {validationError}")
             return func.HttpResponse(
@@ -68,7 +69,10 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
             "receiptPrice": result["receiptPrice"],
             "profit": result["profit"],
             "profitMargin": result["profitMargin"],
+            "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
         }
+        logger.info(f"✅ Response payload: {responsePayload}")
+        
         return func.HttpResponse(
             body=json.dumps(responsePayload, default=str),
             mimetype="application/json",

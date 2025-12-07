@@ -335,6 +335,79 @@ if requestedContainer not in database:
 - Error logged: "Requested 40ft container not found. Available: ['20ft']"
 - Fallback: Uses "Vỏ container 20 feet đã qua sử dụng"
 
+## Container Building from Materials
+
+When the requested container type (20ft or 40ft) is not available in inventory, the optimizer automatically builds a container from raw materials.
+
+### Container Building Specifications
+
+Based on **THUYETMINHKYTHUAT.pdf** - Walking Floor S-Drive KSD 4.25" system:
+
+```python
+CONTAINER_BUILD_SPECS = {
+    "20ft": {
+        "length_m": 6.096,
+        "aluminum_kg": 378,       # ~50% of 40ft
+        "steel_frame_kg": 492,    # ~50% of 40ft
+        "galvanized_sheet_m": 50,
+    },
+    "40ft": {
+        "length_m": 12.192,
+        "aluminum_kg": 757,       # 756.76 kg (25 bars × 12m × 2.53 kg/m)
+        "steel_frame_kg": 983,    # Combined: 332.34 + 398.48 + 252.41 kg
+        "galvanized_sheet_m": 100,
+    },
+}
+```
+
+**40ft Material Breakdown (from technical document):**
+
+| Material | Weight | Description |
+|----------|--------|-------------|
+| Nhôm thanh #000 | 756.76 kg | 25 bars × 12m × 2.53 kg/m (21 for slats + 4 accessories) |
+| Sắt hộp vuông kẽm | 332.34 kg | ~55m hộp 80×40 or 100×50 (main beams) |
+| Thép vuông kẽm | 398.48 kg | ~124m thép 40×40mm (cross bracing) |
+| Thép vuông mạ kẽm | 252.41 kg | ~84m thép 30-40×40mm (frame accessories) |
+```
+
+### Building Process
+
+1. **Check Container Availability**:
+   - Parse container type from request (e.g., "container_40ft" → "40ft")
+   - Check if matching container exists in variable items
+   - If not found, trigger container building
+
+2. **Material Gathering**:
+   - Steel: Collected from any steel type (steel_box, steel_i, etc.)
+   - Galvanized sheets: Collected with weight calculation
+   - Aluminum: Collected from aluminum inventory
+
+3. **Constraints**:
+   - Materials must be at least 90% of required quantity
+   - Building cost must fit within remaining budget
+   - Building weight must fit within remaining weight capacity
+   - Scaled building allowed if constraints tight (minimum 50%)
+
+4. **Response**:
+   - `containerBuiltFromMaterials: true` indicates container was built
+   - Built materials appear in items list with `forContainerBuild: true` flag
+
+### Example: Building 40ft Container
+
+```python
+# Request: container_40ft (not in inventory)
+# Response includes:
+{
+    "containerBuiltFromMaterials": true,
+    "items": [
+        # ... fixed items (walking floor, aluminum bars) ...
+        {"code": "thephop", "quantity": 1500, "weight": 1500, "forContainerBuild": true},
+        {"code": "ton_ma_kem", "quantity": 100, "weight": 894.5, "forContainerBuild": true},
+        {"code": "nhom_thanh", "quantity": 200, "weight": 200, "forContainerBuild": true},
+    ]
+}
+```
+
 ## Future Improvements
 
 1. **Multi-objective Optimization**: Balance weight, cost, and variety more intelligently

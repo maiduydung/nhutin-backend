@@ -1,6 +1,7 @@
 from typing import Any
 from services.database import Database
 from services.weight_calculator import WeightCalculator
+from services.container_builder import ContainerBuilder
 from config import logger
 
 
@@ -14,6 +15,7 @@ class Optimizer:
     def __init__(self, db: Database):
         self.db = db
         self.weightCalculator = WeightCalculator()
+        self.containerBuilder = ContainerBuilder(db)
 
     def optimize(
         self,
@@ -33,30 +35,92 @@ class Optimizer:
         )
         walkingFloorItem = self._getWalkingFloorItem(walkingFloorType, itemModelType, walkingFloorWeight)
         
-        aluminumWeight, hasEnoughAlum = (
-            self.weightCalculator.calculateAluminumBarWeight(
-                containerLength, slatType, self.db
-            )
-        )
-        aluminumItem = self._getAluminumItem(aluminumWeight)
-
-        # Calculate fixed weight and cost
-        fixedWeight = walkingFloorWeight + aluminumWeight
-        fixedCost = (
-            walkingFloorItem["unitPrice"] * walkingFloorItem["quantity"]
-            + aluminumItem["unitPrice"] * aluminumItem["quantity"]
-        )
-
         # Get variable items for optimization (with container validation)
         variableItems = self._getVariableItems(containerType)
 
-        # Optimize variable items
-        selectedItems = self._optimizeVariableItems(
-            variableItems, fixedWeight, fixedCost, receiptPrice
+        # Check if we need to build a container from materials
+        needToBuild, containerSize = self._checkNeedToBuildContainer(
+            containerType, variableItems
         )
 
-        # Combine fixed and variable items
-        allItems = [walkingFloorItem, aluminumItem] + selectedItems
+        # Calculate aluminum bars (skip if building container - aluminum will be part of build)
+        aluminumItem = None
+        aluminumWeight = 0.0
+        
+        if needToBuild:
+            # When building container, aluminum is included in container materials
+            # This avoids double-counting aluminum (bars + container structure)
+            logger.info(
+                f"Building container from materials - aluminum included in container build"
+            )
+        else:
+            # Normal case: calculate aluminum bars separately
+            aluminumWeight, hasEnoughAlum = (
+                self.weightCalculator.calculateAluminumBarWeight(
+                    containerLength, slatType, self.db
+                )
+            )
+            aluminumItem = self._getAluminumItem(aluminumWeight)
+
+        # Calculate fixed weight and cost
+        fixedWeight = walkingFloorWeight + aluminumWeight
+        fixedCost = walkingFloorItem["unitPrice"] * walkingFloorItem["quantity"]
+        if aluminumItem:
+            fixedCost += aluminumItem["unitPrice"] * aluminumItem["quantity"]
+
+        # If building container, BUILD IT FIRST to reserve materials
+        builtContainerItems = []
+        containerBuildCost = 0.0
+        containerBuildWeight = 0.0
+        
+        if needToBuild:
+            maxCost = receiptPrice * (1 - self.MAX_PROFIT_MARGIN)
+            
+            buildResult = self.containerBuilder.buildContainer(
+                containerSize=containerSize,
+                maxCost=maxCost,
+                currentCost=fixedCost,  # Only walking floor cost
+                currentWeight=fixedWeight,  # Only walking floor weight
+                maxWeight=self.MAX_WEIGHT,
+            )
+            
+            if buildResult["success"]:
+                builtContainerItems = buildResult["items"]
+                containerBuildCost = buildResult["totalCost"]
+                containerBuildWeight = buildResult["totalWeight"]
+                logger.info(
+                    f"Built {containerSize} container from materials: "
+                    f"{len(builtContainerItems)} items, "
+                    f"cost={containerBuildCost:,.0f}, "
+                    f"weight={containerBuildWeight:.0f}kg"
+                )
+            else:
+                logger.warning(
+                    f"Failed to build {containerSize} container: {buildResult.get('reason')}"
+                )
+
+        # Extract item IDs used for container building (to avoid duplicates)
+        containerBuildItemIds = set()
+        if builtContainerItems:
+            for item in builtContainerItems:
+                containerBuildItemIds.add(item["id"])
+        
+        # Optimize variable items with container build cost/weight already accounted for
+        effectiveFixedCost = fixedCost + containerBuildCost
+        effectiveFixedWeight = fixedWeight + containerBuildWeight
+        
+        selectedItems = self._optimizeVariableItems(
+            variableItems, effectiveFixedWeight, effectiveFixedCost, receiptPrice, 
+            skipContainerBuild=needToBuild,
+            containerBuildItemIds=containerBuildItemIds
+        )
+
+        # Combine fixed and variable items (and built container materials if any)
+        allItems = [walkingFloorItem]
+        if aluminumItem:
+            allItems.append(aluminumItem)
+        allItems.extend(selectedItems)
+        allItems.extend(builtContainerItems)
 
         # Calculate totals
         totalWeight = sum(item["weight"] for item in allItems)
@@ -65,23 +129,33 @@ class Optimizer:
         # If weight is below MIN_WEIGHT, try to add more aluminum
         # Adding aluminum increases cost and DECREASES profit margin (which is good!)
         if totalWeight < self.MIN_WEIGHT:
-            additionalAluminum = self._boostAluminumForWeight(
-                aluminumItem, totalWeight, totalCost, receiptPrice
-            )
-            if additionalAluminum:
-                # Update aluminum item with additional quantity
-                aluminumItem["quantity"] += additionalAluminum["additionalQty"]
-                aluminumItem["weight"] += additionalAluminum["additionalWeight"]
-                aluminumItem["totalValue"] += additionalAluminum["additionalCost"]
-                
-                # Recalculate totals
-                totalWeight += additionalAluminum["additionalWeight"]
-                totalCost += additionalAluminum["additionalCost"]
-                
-                logger.info(
-                    f"Boosted aluminum by {additionalAluminum['additionalQty']:.2f} kg "
-                    f"to reach weight {totalWeight:.2f} kg"
+            # Find aluminum item to boost (either from fixed items or from container build)
+            aluminumToBoost = aluminumItem
+            if not aluminumToBoost:
+                # Look for aluminum in container build materials
+                for item in builtContainerItems:
+                    if "aluminum" in item.get("type", "") or "nhôm" in item.get("name", "").lower():
+                        aluminumToBoost = item
+                        break
+            
+            if aluminumToBoost:
+                additionalAluminum = self._boostAluminumForWeight(
+                    aluminumToBoost, totalWeight, totalCost, receiptPrice
                 )
+                if additionalAluminum:
+                    # Update aluminum item with additional quantity
+                    aluminumToBoost["quantity"] += additionalAluminum["additionalQty"]
+                    aluminumToBoost["weight"] += additionalAluminum["additionalWeight"]
+                    aluminumToBoost["totalValue"] += additionalAluminum["additionalCost"]
+                    
+                    # Recalculate totals
+                    totalWeight += additionalAluminum["additionalWeight"]
+                    totalCost += additionalAluminum["additionalCost"]
+                    
+                    logger.info(
+                        f"Boosted aluminum by {additionalAluminum['additionalQty']:.2f} kg "
+                        f"to reach weight {totalWeight:.2f} kg"
+                    )
 
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
@@ -93,6 +167,7 @@ class Optimizer:
             "receiptPrice": receiptPrice,
             "profit": round(profit, 2),
             "profitMargin": round(profitMargin, 2),
+            "containerBuiltFromMaterials": needToBuild and len(builtContainerItems) > 0,
         }
     
     def _boostAluminumForWeight(
@@ -376,17 +451,59 @@ class Optimizer:
         )
         return fallbackContainer
 
+    def _checkNeedToBuildContainer(
+        self,
+        containerType: str,
+        variableItems: list[dict[str, Any]],
+    ) -> tuple[bool, str]:
+        """
+        Check if we need to build a container from materials.
+        
+        Returns:
+            (needToBuild, containerSize) - True if no container available, with size
+        """
+        # Parse container size from type
+        containerSize = None
+        if containerType:
+            if "40" in containerType:
+                containerSize = "40ft"
+            elif "20" in containerType:
+                containerSize = "20ft"
+        
+        if not containerSize:
+            return False, ""
+        
+        # Check if requested container is available
+        for item in variableItems:
+            if item["type"] == "container":
+                sizeInName = "40" if containerSize == "40ft" else "20"
+                if sizeInName in item["name"]:
+                    return False, containerSize  # Container available
+        
+        # No matching container found
+        logger.warning(
+            f"No {containerSize} container in inventory. "
+            f"Will attempt to build from materials."
+        )
+        return True, containerSize
+
     def _optimizeVariableItems(
         self,
         variableItems: list[dict[str, Any]],
         fixedWeight: float,
         fixedCost: float,
         receiptPrice: float,
+        skipContainerBuild: bool = False,
+        containerBuildItemIds: set[int] = None,
     ) -> list[dict[str, Any]]:
         """
         Greedy optimization: aggressively fill weight range to MAX_WEIGHT.
         Maximizes variety by selecting from different types.
         Respects profit margin constraint.
+        
+        Args:
+            skipContainerBuild: If True, don't add containers (we'll build from materials)
+            containerBuildItemIds: Set of item IDs already used for container building (to avoid duplicates)
         """
         # Target maximum weight (be greedy!)
         targetWeight = self.MAX_WEIGHT - fixedWeight
@@ -395,11 +512,26 @@ class Optimizer:
         usedTypes = set()
         currentCost = fixedCost
         maxCost = receiptPrice * (1 - self.MAX_PROFIT_MARGIN)  # Max cost to stay within profit margin
+        
+        # Types used for container building - exclude these when building container
+        containerBuildTypes = {'steel_box', 'galvanized_sheet', 'aluminum'}
+        containerBuildItemIds = containerBuildItemIds or set()
 
         # Group items by type for variety
         itemsByType = {}
         for item in variableItems:
             itemType = item["type"]
+            
+            # Skip items already used for container building (by ID)
+            if item["id"] in containerBuildItemIds:
+                logger.debug(f"Skipping item {item['code']} - already used for container build")
+                continue
+            
+            # Skip container build material types when building container from materials
+            if skipContainerBuild and itemType in containerBuildTypes:
+                logger.debug(f"Skipping {itemType} item {item['code']} - reserved for container build")
+                continue
+                
             if itemType not in itemsByType:
                 itemsByType[itemType] = []
             itemsByType[itemType].append(item)
@@ -490,12 +622,17 @@ class Optimizer:
         
         # Step 2: Add zero-weight items (like containers) to fill budget
         # Prioritize containers first - they're essential for shipping!
+        # But skip if we're building container from materials
         containerFirst = sorted(
             zeroWeightItems,
             key=lambda x: (0 if x["type"] == "container" else 1, -x["unitPrice"])
         )
         
         for item in containerFirst:
+            # Skip containers if we're building from materials
+            if skipContainerBuild and item["type"] == "container":
+                logger.info(f"Skipping container '{item['name']}' - will build from materials")
+                continue
             if currentCost >= maxCost:
                 # For containers, we allow slightly exceeding budget (up to 85% of receipt)
                 # because a container is essential for shipping
@@ -540,8 +677,17 @@ class Optimizer:
         selectedMap = {item["id"]: item for item in selectedItems}
         
         # Calculate weight-to-cost ratio for all items
+        # IMPORTANT: Apply same exclusions as above to avoid duplicates with container build
         itemsWithRatio = []
         for item in variableItems:
+            # Skip items already used for container building (by ID)
+            if item["id"] in containerBuildItemIds:
+                continue
+            
+            # Skip container build material types when building container from materials
+            if skipContainerBuild and item["type"] in containerBuildTypes:
+                continue
+            
             weightPerUnit = self.weightCalculator.calculateItemWeight(
                 item["type"], item["unit"], 1, item["name"]
             )

@@ -197,7 +197,8 @@ Content-Type: application/json
   "totalCost": 476137382.0,
   "receiptPrice": 600000000.0,
   "profit": 123862618.0,
-  "profitMargin": 20.64
+  "profitMargin": 20.64,
+  "containerBuiltFromMaterials": false
 }
 ```
 
@@ -208,6 +209,7 @@ Content-Type: application/json
 - `receiptPrice`: Input receipt price in VND
 - `profit`: Calculated profit (receiptPrice - totalCost)
 - `profitMargin`: Profit margin percentage (must be ≤ 20%)
+- `containerBuiltFromMaterials`: Boolean indicating if container was built from raw materials (true when requested container not in inventory)
 
 ## Database Statistics (as of inspection)
 
@@ -257,6 +259,8 @@ Content-Type: application/json
    - Supports: `local.settings.json`, environment variables
    - Azure Key Vault integration (prepared but commented out)
    - Walking floor weight constants (`WALKING_FLOORS` dictionary)
+   - Container build specifications (`CONTAINER_BUILD_SPECS`) based on technical document
+   - Material type mappings (`CONTAINER_MATERIAL_TYPES`) for database lookups
 
 6. **Weight Calculation System** (`services/weight_calculator.py`)
    - Walking floor weight lookup from config (R2DX: 751kg, KSD: 503kg, KMD: 502kg)
@@ -276,12 +280,28 @@ Content-Type: application/json
    - **Zero-Weight Items**:
      - Containers are treated as packaging (weight = 0)
      - Used to fill budget and reduce profit margin
+   - **Container Building** (when unavailable):
+     - Automatically builds container from raw materials
+     - Uses steel frame, galvanized sheets, and aluminum
+     - Specs based on THUYETMINHKYTHUAT.pdf (Walking Floor S-Drive KSD 4.25")
+     - 20ft: 492kg steel frame, 50m sheets, 378kg aluminum
+     - 40ft: 983kg steel frame, 100m sheets, 757kg aluminum
+     - Flexible material substitution: aluminum compensates for steel shortfall
    - **Constraints**:
      - Weight: 3000-3700kg (soft limit, prefers under 3700kg)
      - Profit margin: ≤ 25% of receipt price
      - Inventory availability: Respects `final_quantity` from database
 
-8. **Receipt Processing API**
+8. **Container Builder** (`services/container_builder.py`)
+   - Builds containers from raw materials when pre-built containers unavailable
+   - Supports 20ft and 40ft container specifications (based on THUYETMINHKYTHUAT.pdf)
+   - Checks material availability (steel frame, galvanized sheets, aluminum)
+   - **Flexible Material Substitution**: Aluminum can compensate for steel shortfall
+   - Respects budget and weight constraints during building
+   - Allows scaled building (minimum 50%) when constraints are tight
+   - Prevents duplicate items (container build materials excluded from variable optimization)
+
+9. **Receipt Processing API**
    - Full optimization pipeline integrated
    - Returns optimized item list with weights and costs
    - Calculates profit margin and validates constraints
