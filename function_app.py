@@ -13,18 +13,22 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 database = Database()
 
 @app.function_name(name="health")
-@app.route(route="health", methods=["GET"])
+@app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def health(req: func.HttpRequest) -> func.HttpResponse:
     """Simple health check endpoint."""
     return func.HttpResponse(
-        body=json.dumps({"status": "ok", "message": "NhuTin DB Receipts Processing Service is running"}),
+        body=json.dumps({
+            "status": "ok",
+            "message": "NhuTin DB Receipts Processing Service is running",
+            "function": "Nhu Tin Bill of Materials"
+        }),
         mimetype="application/json",
         status_code=200,
     )
 
 
 @app.function_name(name="process-receipts")
-@app.route(route="process_receipt", methods=["POST"])
+@app.route(route="process_receipt", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
     """
     Trigger receipts processing from the user inputs, in JSON format.
