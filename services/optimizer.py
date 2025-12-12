@@ -9,8 +9,10 @@ class Optimizer:
     """Optimizes item selection for container weight and profit constraints."""
 
     MIN_WEIGHT = 3000  # kg
-    MAX_WEIGHT = 3700  # kg (soft limit)
-    MAX_PROFIT_MARGIN = 0.25  # 25%
+    BASE_MAX_WEIGHT = 3700  # kg (base limit before material loss)
+    MATERIAL_LOSS_FACTOR = 0.12  # 12% material loss during processing
+    MAX_WEIGHT = int(BASE_MAX_WEIGHT * (1 + MATERIAL_LOSS_FACTOR))  # ~4144 kg with loss factor
+    MAX_PROFIT_MARGIN = 0.20  # 20% (target profit margin)
 
     def __init__(self, db: Database):
         self.db = db
@@ -157,8 +159,31 @@ class Optimizer:
                         f"to reach weight {totalWeight:.2f} kg"
                     )
 
+        # Check profit margin and add more materials if too high
+        # Since we allow extra weight due to material loss, we can keep adding
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
+        
+        if profitMargin > self.MAX_PROFIT_MARGIN * 100:
+            logger.info(
+                f"Profit margin {profitMargin:.2f}% exceeds target {self.MAX_PROFIT_MARGIN * 100}%. "
+                f"Adding more materials to reduce margin..."
+            )
+            addedItems = self._fillBudgetToTargetMargin(
+                allItems, totalWeight, totalCost, receiptPrice, 
+                aluminumItem, variableItems, containerBuildItemIds
+            )
+            
+            if addedItems:
+                # Recalculate totals
+                totalWeight = sum(item["weight"] for item in allItems)
+                totalCost = sum(item["totalValue"] for item in allItems)
+                profit = receiptPrice - totalCost
+                profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
+                logger.info(
+                    f"After budget fill: weight={totalWeight:.2f}kg, "
+                    f"cost={totalCost:,.0f}, margin={profitMargin:.2f}%"
+                )
 
         return {
             "items": allItems,
@@ -216,9 +241,9 @@ class Optimizer:
         unitPrice = aluminumItem["unitPrice"]
         
         # For weight boost, we want to add weight but still maintain a minimum profit margin
-        # Target: at least 10% profit margin (MIN_BOOST_PROFIT_MARGIN)
+        # Target: at least 5% profit margin (MIN_BOOST_PROFIT_MARGIN)
         # This ensures we don't accidentally spend the entire receipt price
-        MIN_BOOST_PROFIT_MARGIN = 0.10  # 10% minimum profit after boost
+        MIN_BOOST_PROFIT_MARGIN = 0.05  # 5% minimum profit after boost
         maxCostAfterBoost = receiptPrice * (1 - MIN_BOOST_PROFIT_MARGIN)
         budgetForBoost = maxCostAfterBoost - currentCost
         
@@ -254,6 +279,174 @@ class Optimizer:
             "additionalWeight": round(additionalWeight, 2),
             "additionalCost": round(additionalCost, 2),
         }
+
+    def _fillBudgetToTargetMargin(
+        self,
+        allItems: list[dict],
+        currentWeight: float,
+        currentCost: float,
+        receiptPrice: float,
+        aluminumItem: dict,
+        variableItems: list[dict],
+        containerBuildItemIds: set[int],
+    ) -> bool:
+        """
+        Fill remaining budget to reach target profit margin.
+        
+        With material loss factor, we can add more weight beyond BASE_MAX_WEIGHT.
+        Priority: aluminum first (best weight-to-cost), then other materials.
+        
+        Returns True if items were added.
+        """
+        targetCost = receiptPrice * (1 - self.MAX_PROFIT_MARGIN)
+        budgetRemaining = targetCost - currentCost
+        
+        if budgetRemaining <= 0:
+            return False
+        
+        addedItems = False
+        selectedMap = {item["id"]: item for item in allItems}
+        
+        # Priority 1: Add more aluminum (best for weight and cost)
+        if aluminumItem and aluminumItem["id"] in selectedMap:
+            result = self.db.executeQuery(
+                """
+                SELECT ir.final_quantity
+                FROM inventory_records ir
+                JOIN items i ON ir.item_id = i.id
+                WHERE i.type = 'aluminum'
+                ORDER BY ir.record_date DESC
+                LIMIT 1
+                """
+            )
+            
+            if result:
+                availableQty = float(result[0][0])
+                alreadyUsed = aluminumItem["quantity"]
+                remainingAvailable = availableQty - alreadyUsed
+                
+                if remainingAvailable > 0:
+                    unitPrice = aluminumItem["unitPrice"]
+                    maxByBudget = budgetRemaining / unitPrice if unitPrice > 0 else 0
+                    additionalQty = min(remainingAvailable, maxByBudget)
+                    
+                    if additionalQty > 0:
+                        additionalCost = additionalQty * unitPrice
+                        aluminumItem["quantity"] += additionalQty
+                        aluminumItem["weight"] += additionalQty  # aluminum: weight = quantity
+                        aluminumItem["totalValue"] += additionalCost
+                        
+                        budgetRemaining -= additionalCost
+                        currentWeight += additionalQty
+                        currentCost += additionalCost
+                        addedItems = True
+                        
+                        logger.info(
+                            f"Added {additionalQty:.2f}kg aluminum to fill budget "
+                            f"(remaining: {budgetRemaining:,.0f})"
+                        )
+        
+        # Priority 2: Add more of existing steel/material items
+        for item in allItems:
+            if budgetRemaining <= 0:
+                break
+            
+            if item.get("id") in containerBuildItemIds:
+                continue
+            
+            itemType = item.get("type", "")
+            if itemType not in ["steel_box", "steel_i", "steel_square", "steel_u", 
+                               "steel_pipe", "steel_plate", "galvanized_sheet"]:
+                continue
+            
+            # Find original item to get available quantity
+            originalItem = None
+            for vi in variableItems:
+                if vi["id"] == item["id"]:
+                    originalItem = vi
+                    break
+            
+            if not originalItem:
+                continue
+            
+            remainingAvailable = originalItem["availableQuantity"] - item["quantity"]
+            if remainingAvailable <= 0:
+                continue
+            
+            unitPrice = item["unitPrice"]
+            if unitPrice <= 0:
+                continue
+            
+            maxByBudget = int(budgetRemaining / unitPrice)
+            additionalQty = min(remainingAvailable, maxByBudget)
+            
+            if additionalQty > 0:
+                weightPerUnit = self.weightCalculator.calculateItemWeight(
+                    originalItem["type"], originalItem["unit"], 1, originalItem["name"]
+                )
+                additionalWeight = weightPerUnit * additionalQty
+                additionalCost = unitPrice * additionalQty
+                
+                item["quantity"] += additionalQty
+                item["weight"] += additionalWeight
+                item["totalValue"] += additionalCost
+                
+                budgetRemaining -= additionalCost
+                addedItems = True
+                
+                logger.info(
+                    f"Added {additionalQty} {item['unit']} {item['code']} "
+                    f"({additionalWeight:.2f}kg) to fill budget"
+                )
+        
+        # Priority 3: Add new items from inventory if budget still remaining
+        if budgetRemaining > 100000:  # Only if significant budget left
+            for vi in variableItems:
+                if budgetRemaining <= 0:
+                    break
+                
+                if vi["id"] in selectedMap or vi["id"] in containerBuildItemIds:
+                    continue
+                
+                if vi["type"] == "container":
+                    continue
+                
+                unitPrice = vi["unitPrice"]
+                if unitPrice <= 0:
+                    continue
+                
+                maxByBudget = int(budgetRemaining / unitPrice)
+                quantity = min(vi["availableQuantity"], maxByBudget)
+                
+                if quantity > 0:
+                    weightPerUnit = self.weightCalculator.calculateItemWeight(
+                        vi["type"], vi["unit"], 1, vi["name"]
+                    )
+                    weight = weightPerUnit * quantity
+                    totalValue = unitPrice * quantity
+                    
+                    newItem = {
+                        "id": vi["id"],
+                        "code": vi["code"],
+                        "name": vi["name"],
+                        "unit": vi["unit"],
+                        "quantity": quantity,
+                        "unitPrice": unitPrice,
+                        "totalValue": totalValue,
+                        "weight": weight,
+                    }
+                    allItems.append(newItem)
+                    selectedMap[vi["id"]] = newItem
+                    
+                    budgetRemaining -= totalValue
+                    addedItems = True
+                    
+                    logger.info(
+                        f"Added new item {vi['code']} ({quantity} {vi['unit']}, "
+                        f"{weight:.2f}kg) to fill budget"
+                    )
+        
+        return addedItems
 
     def _getWalkingFloorItem(
         self, itemType: str, itemModelType: str, weight: float

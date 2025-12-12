@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2025-12-12
+
+### Changed
+
+#### Material Loss Factor
+- **New Feature**: Added 12% material loss factor to account for processing losses (cutting, shaping, waste)
+- Base weight limit remains 3700 kg (target cargo weight)
+- Effective max weight increased to **4144 kg** (3700 × 1.12)
+- After processing, ~3700 kg of usable cargo expected
+
+#### Profit Margin Target
+- Reduced target profit margin from 25% to **20%**
+- Reduced minimum boost profit margin from 10% to **5%** (for aluminum weight boost)
+- More aggressive budget filling to ensure profit margin stays within target
+
+### Added
+
+#### Budget Filling Logic (`services/optimizer.py`)
+- **New Method**: `_fillBudgetToTargetMargin()` - Fills remaining budget when profit margin exceeds 20%
+- Priority order for budget filling:
+  1. Aluminum (best weight-to-cost ratio)
+  2. Steel (existing items)
+  3. New items from inventory
+- Activates automatically after main optimization if margin still too high
+
+### Fixed
+
+#### High Profit Margin Issue
+- **Root Cause**: Algorithm stopped at weight limit (3700 kg) before spending enough budget
+- **Fix**: With material loss factor, algorithm can now add materials up to 4144 kg
+- **Fix**: Added budget filling step to spend remaining budget after weight optimization
+- Expected result: profit margin reduced from 34-35% to 15-20%
+
+### Configuration Changes (`services/optimizer.py`)
+
+| Constant | Before | After | Description |
+|----------|--------|-------|-------------|
+| `BASE_MAX_WEIGHT` | N/A | 3700 kg | Base weight limit |
+| `MATERIAL_LOSS_FACTOR` | N/A | 0.12 (12%) | Processing loss factor |
+| `MAX_WEIGHT` | 3700 kg | 4144 kg | Effective max weight |
+| `MAX_PROFIT_MARGIN` | 0.25 (25%) | 0.20 (20%) | Target profit margin |
+| `MIN_BOOST_PROFIT_MARGIN` | 0.10 (10%) | 0.05 (5%) | Minimum margin for boost |
+
+### Documentation
+- Updated `docs/ALGORITHM.md` with material loss factor explanation
+- Updated `README.md` with new weight constraints and profit margin targets
+
+---
+
 ## [1.4.0] - 2025-12-07
 
 ### Fixed

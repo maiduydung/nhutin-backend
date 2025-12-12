@@ -13,8 +13,8 @@ The system processes user requests containing:
 
 It then:
 1. Fetches required items from the database based on these specifications
-2. Optimizes item selection to keep total weight within **3000-3700kg** range
-3. Ensures profit margin stays **below 20%** of the receipt value
+2. Optimizes item selection to keep total weight within **3000-4144kg** range (includes 12% material loss factor)
+3. Ensures profit margin stays **at or below 20%** of the receipt value
 4. Returns an optimized item list for container construction
 
 ## Architecture
@@ -354,9 +354,10 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
    - `galvanized_sheet`, `stainless_steel`, `hydraulic_pump`, `container`
 
 4. **Constraints Enforcement**:
-   - **Weight**: Targets 3000-3700kg range (soft limit at 3700kg)
-   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.25`
+   - **Weight**: Targets 3000-4144kg range (base 3700kg + 12% material loss factor)
+   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.20` (20%)
    - **Inventory**: Respects `final_quantity` from latest inventory records
+   - **Budget Filling**: If profit margin exceeds 20%, adds more materials to fill budget
 
 ### Profit Calculation
 
@@ -364,7 +365,12 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
 - **Unit Price**: Calculated as `final_value / final_quantity` from latest inventory record
 - **Profit**: `receiptPrice - totalCost`
 - **Profit Margin**: `(profit / receiptPrice) × 100%`
-- **Constraint**: Profit margin must be ≤ 25%
+- **Constraint**: Profit margin must be ≤ 20%
+
+**Material Loss Factor**: The optimizer accounts for 12% material loss during processing:
+- Base weight limit: 3700 kg (target cargo weight)
+- With material loss: up to 4144 kg of raw materials can be used
+- After processing (cutting, shaping), expect ~3700 kg of usable cargo
 
 **Note**: If the database doesn't have enough inventory to meet the profit margin target, the optimizer will use all available inventory and return the best possible result.
 

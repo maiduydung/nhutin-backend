@@ -10,8 +10,11 @@ This is a **Constrained Multiple Knapsack Problem** variant with the following c
 
 ### Constraints
 
-1. **Weight Constraint**: Total weight must be between 3000-3700 kg (soft limit at 3700kg)
-2. **Budget Constraint**: Total cost ≤ 75% of receipt price (profit margin ≤ 25%)
+1. **Weight Constraint**: Total weight must be between 3000-4144 kg
+   - Base limit: 3700 kg
+   - Material loss factor: 12% (allows extra weight to compensate for processing losses)
+   - Effective max weight: 3700 × 1.12 ≈ 4144 kg
+2. **Budget Constraint**: Total cost ≤ 80% of receipt price (profit margin ≤ 20%)
 3. **Variety Constraint**: Must use multiple item types (never select only one type)
 4. **Availability Constraint**: Cannot exceed `final_quantity` from inventory records
 
@@ -106,9 +109,12 @@ Iteratively fill remaining weight capacity:
    - Take maximum possible (respecting weight, budget, availability)
    - Update selected items
 3. **Continue until**:
-   - Weight reaches MAX_WEIGHT (3700kg), OR
+   - Weight reaches MAX_WEIGHT (~4144kg with material loss factor), OR
    - Budget exhausted (cost ≥ maxCost), OR
    - No more items can be added
+4. **If profit margin still too high** (> 20%):
+   - Add more materials to fill remaining budget
+   - Priority: aluminum first, then steel, then others
 
 ### Step 5: Iteration Loop
 The algorithm uses a **while loop** (max 20 iterations) to ensure all items are considered:
@@ -168,7 +174,22 @@ profit = receiptPrice - totalCost
 profitMargin = (profit / receiptPrice) × 100%
 ```
 
-**Constraint**: `profitMargin ≤ 25%` (equivalent to `totalCost ≤ receiptPrice × 0.75`)
+**Constraint**: `profitMargin ≤ 20%` (equivalent to `totalCost ≤ receiptPrice × 0.80`)
+
+### Material Loss Factor
+
+Due to material processing losses (cutting, shaping, waste), the algorithm allows extra weight:
+
+```python
+BASE_MAX_WEIGHT = 3700  # kg (target cargo weight)
+MATERIAL_LOSS_FACTOR = 0.12  # 12% loss during processing
+MAX_WEIGHT = BASE_MAX_WEIGHT × (1 + MATERIAL_LOSS_FACTOR)  # ~4144 kg
+```
+
+This means:
+- Base cargo weight target: 3700 kg
+- With 12% material loss factor: can add up to 4144 kg of materials
+- After processing, expect ~3700 kg of usable cargo
 
 ## Algorithm Pseudocode
 
@@ -181,7 +202,7 @@ function optimize(containerLength, itemModelType, slatType, receiptPrice):
     
     fixedWeight = walkingFloor.weight + aluminumWeight
     fixedCost = walkingFloor.cost + aluminumItem.cost
-    maxCost = receiptPrice × 0.75  // 25% profit margin
+    maxCost = receiptPrice × 0.80  // 20% profit margin
     
     // Phase 2: Variable Items
     variableItems = getVariableItems()  // All variable types including container
