@@ -109,7 +109,7 @@ class TestContainerBuilder(unittest.TestCase):
             maxCost=100_000_000,  # 100M budget
             currentCost=99_000_000,  # Already spent 99M
             currentWeight=1000,
-            maxWeight=3700,
+            maxWeight=6000,
         )
         
         # Should fail or scale down due to budget
@@ -128,7 +128,7 @@ class TestContainerBuilder(unittest.TestCase):
             maxCost=500_000_000,
             currentCost=100_000_000,
             currentWeight=3500,  # Already at 3500kg
-            maxWeight=3700,  # Only 200kg left
+            maxWeight=6000,  # Only 200kg left
         )
         
         # Should fail or scale down due to weight

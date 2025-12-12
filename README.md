@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is an Azure Functions-based backend service for managing inventory items and optimizing container configurations. The system helps determine the optimal combination of items to build containers while maintaining weight constraints (3000-3700kg) and profit margins (less than 20% of receipt value).
+This is an Azure Functions-based backend service for managing inventory items and optimizing container configurations. The system helps determine the optimal combination of items to build containers while maintaining weight constraints (3000-6000kg) and profit margins (less than 20% of receipt value).
 
 ## Project Purpose
 
@@ -204,7 +204,7 @@ Content-Type: application/json
 
 **Response Fields:**
 - `items`: Array of optimized items with quantities, prices, and weights
-- `totalWeight`: Total weight in kg (target: 3000-3700kg)
+- `totalWeight`: Total weight in kg (target: 3000-6000kg)
 - `totalCost`: Total cost of all items in VND
 - `receiptPrice`: Input receipt price in VND
 - `profit`: Calculated profit (receiptPrice - totalCost)
@@ -288,7 +288,7 @@ Content-Type: application/json
      - 40ft: 983kg steel frame, 100m sheets, 757kg aluminum
      - Flexible material substitution: aluminum compensates for steel shortfall
    - **Constraints**:
-     - Weight: 3000-3700kg (soft limit, prefers under 3700kg)
+     - Weight: 3000-6000kg (soft limit, prefers under 6000kg)
      - Profit margin: ≤ 25% of receipt price
      - Inventory availability: Respects `final_quantity` from database
 
@@ -354,7 +354,7 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
    - `galvanized_sheet`, `stainless_steel`, `hydraulic_pump`, `container`
 
 4. **Constraints Enforcement**:
-   - **Weight**: Targets 3000-4144kg range (base 3700kg + 12% material loss factor)
+   - **Weight**: Targets 3000-6720kg range (base 6000kg + 12% material loss factor)
    - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.20` (20%)
    - **Inventory**: Respects `final_quantity` from latest inventory records
    - **Budget Filling**: If profit margin exceeds 20%, adds more materials to fill budget
@@ -368,9 +368,9 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
 - **Constraint**: Profit margin must be ≤ 20%
 
 **Material Loss Factor**: The optimizer accounts for 12% material loss during processing:
-- Base weight limit: 3700 kg (target cargo weight)
-- With material loss: up to 4144 kg of raw materials can be used
-- After processing (cutting, shaping), expect ~3700 kg of usable cargo
+- Base weight limit: 6000 kg (target cargo weight)
+- With material loss: up to 6720 kg of raw materials can be used
+- After processing (cutting, shaping), expect ~6000 kg of usable cargo
 
 **Note**: If the database doesn't have enough inventory to meet the profit margin target, the optimizer will use all available inventory and return the best possible result.
 
@@ -404,7 +404,7 @@ Query database for items matching itemModelType
 Determine required items based on container specs
     ↓
 Optimize item quantities:
-    - Weight constraint: 3000-3700kg
+    - Weight constraint: 3000-6000kg
     - Profit constraint: < 20% of receipt value
     ↓
 Return optimized item list
@@ -552,7 +552,7 @@ The `data/` directory contains:
 2. **Add weight data to schema**
    - Add `weight_per_unit` column to `items` table, OR
    - Create `item_specifications` table with weight/dimensions
-   - This is critical for the 3000-3700kg weight optimization
+   - This is critical for the 3000-6000kg weight optimization
 
 3. **Create item-container mapping**
    - BOM table or configuration file
@@ -560,7 +560,7 @@ The `data/` directory contains:
    - Map `itemModelType` (e.g., "R2DX") to specific item codes
 
 4. **Implement optimization algorithm**
-   - Constraint satisfaction solver (weight range: 3000-3700kg)
+   - Constraint satisfaction solver (weight range: 3000-6000kg)
    - Profit calculation logic (profit < 20% of receipt value)
    - Use `price_history` or `inventory_records.final_value / final_quantity` for unit prices
    - Item quantity optimization
@@ -587,7 +587,7 @@ The `data/` directory contains:
 
 ## Known Limitations
 
-1. **No weight data**: Item weights are not currently stored in the database (needed for 3000-3700kg optimization)
+1. **No weight data**: Item weights are not currently stored in the database (needed for 3000-6000kg optimization)
 2. **No BOM**: No bill of materials mapping container specs to items
 3. **No optimization**: Core optimization logic is not implemented
 4. **Single connection**: Database uses one persistent connection (not pooled)

@@ -125,7 +125,7 @@ class ContainerBuilder:
             maxCost: Maximum allowed total cost
             currentCost: Current cost from fixed + variable items
             currentWeight: Current weight from fixed + variable items
-            maxWeight: Maximum allowed weight (3700kg)
+            maxWeight: Maximum allowed weight (6000kg)
         
         Returns:
             Dict with: success, items (list of materials used), totalCost, totalWeight
@@ -481,7 +481,7 @@ def main():
         maxCost=600_000_000 * 0.75,
         currentCost=300_000_000,
         currentWeight=1500,
-        maxWeight=3700,
+        maxWeight=6000,
     )
     print(f"  Success: {buildResult['success']}")
     if buildResult["success"]:

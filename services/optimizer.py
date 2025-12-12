@@ -9,9 +9,9 @@ class Optimizer:
     """Optimizes item selection for container weight and profit constraints."""
 
     MIN_WEIGHT = 3000  # kg
-    BASE_MAX_WEIGHT = 3700  # kg (base limit before material loss)
+    BASE_MAX_WEIGHT = 6000  # kg (base limit before material loss)
     MATERIAL_LOSS_FACTOR = 0.12  # 12% material loss during processing
-    MAX_WEIGHT = int(BASE_MAX_WEIGHT * (1 + MATERIAL_LOSS_FACTOR))  # ~4144 kg with loss factor
+    MAX_WEIGHT = int(BASE_MAX_WEIGHT * (1 + MATERIAL_LOSS_FACTOR))  # ~6720 kg with loss factor
     MAX_PROFIT_MARGIN = 0.20  # 20% (target profit margin)
 
     def __init__(self, db: Database):

@@ -10,10 +10,10 @@ This is a **Constrained Multiple Knapsack Problem** variant with the following c
 
 ### Constraints
 
-1. **Weight Constraint**: Total weight must be between 3000-4144 kg
-   - Base limit: 3700 kg
+1. **Weight Constraint**: Total weight must be between 3000-6720 kg
+   - Base limit: 6000 kg
    - Material loss factor: 12% (allows extra weight to compensate for processing losses)
-   - Effective max weight: 3700 × 1.12 ≈ 4144 kg
+   - Effective max weight: 6000 × 1.12 ≈ 6720 kg
 2. **Budget Constraint**: Total cost ≤ 80% of receipt price (profit margin ≤ 20%)
 3. **Variety Constraint**: Must use multiple item types (never select only one type)
 4. **Availability Constraint**: Cannot exceed `final_quantity` from inventory records
@@ -109,7 +109,7 @@ Iteratively fill remaining weight capacity:
    - Take maximum possible (respecting weight, budget, availability)
    - Update selected items
 3. **Continue until**:
-   - Weight reaches MAX_WEIGHT (~4144kg with material loss factor), OR
+   - Weight reaches MAX_WEIGHT (~6720kg with material loss factor), OR
    - Budget exhausted (cost ≥ maxCost), OR
    - No more items can be added
 4. **If profit margin still too high** (> 20%):
@@ -158,7 +158,7 @@ weight = quantity × weight_per_meter
 weight = 0  # Containers don't count toward weight constraint
 ```
 - **Important**: Container weight is set to 0 because it's the packaging, not cargo
-- The weight constraint (3000-3700kg) applies to cargo that goes INTO the container
+- The weight constraint (3000-6000kg) applies to cargo that goes INTO the container
 - Containers are high-value items used to fill budget and reduce profit margin
 
 ### 6. Hydraulic Pumps (`unit = "cái" or "pcs"`)
@@ -181,15 +181,15 @@ profitMargin = (profit / receiptPrice) × 100%
 Due to material processing losses (cutting, shaping, waste), the algorithm allows extra weight:
 
 ```python
-BASE_MAX_WEIGHT = 3700  # kg (target cargo weight)
+BASE_MAX_WEIGHT = 6000  # kg (target cargo weight)
 MATERIAL_LOSS_FACTOR = 0.12  # 12% loss during processing
-MAX_WEIGHT = BASE_MAX_WEIGHT × (1 + MATERIAL_LOSS_FACTOR)  # ~4144 kg
+MAX_WEIGHT = BASE_MAX_WEIGHT × (1 + MATERIAL_LOSS_FACTOR)  # ~6720 kg
 ```
 
 This means:
-- Base cargo weight target: 3700 kg
-- With 12% material loss factor: can add up to 4144 kg of materials
-- After processing, expect ~3700 kg of usable cargo
+- Base cargo weight target: 6000 kg
+- With 12% material loss factor: can add up to 6720 kg of materials
+- After processing, expect ~6000 kg of usable cargo
 
 ## Algorithm Pseudocode
 
@@ -313,14 +313,14 @@ if currentTotalWeight == previousWeight and currentCost == previousCost:
 
 **Phase 2**:
 - Available budget: 450,000,000 - 332,342,941 = 117,657,059 VND
-- Available weight: 3700 - 1427.8 = 2272.2 kg
+- Available weight: 6000 - 1427.8 = 4572.2 kg
 - Select items by ratio:
   1. `thephop`: 1 kg / 16,640 VND = 0.0000601 ratio → 483 kg
   2. `THÉP_HỘP_KẼM`: 1 kg / 16,561 VND = 0.0000604 ratio → 249 kg
   3. `Tôn_mạ_kẽm_1.50x1250`: 14.72 kg / 236,364 VND = 0.0000623 ratio → 54 m (794.81 kg)
   4. Continue until weight/budget exhausted...
 
-**Result**: ~3625 kg total weight, within 3000-3700 kg range
+**Result**: ~3625 kg total weight, within 3000-6000 kg range
 
 ## Aluminum Boost for Weight
 
@@ -434,7 +434,7 @@ CONTAINER_BUILD_SPECS = {
 1. **Multi-objective Optimization**: Balance weight, cost, and variety more intelligently
 2. **Backtracking**: Allow undoing selections if better combination found
 3. **Multiple Solutions**: Generate top-N solutions for user to choose
-4. **Weight Tolerance Configuration**: Make 3000-3700kg range configurable
+4. **Weight Tolerance Configuration**: Make 3000-6000kg range configurable
 5. **Item Priority Weights**: Allow certain items to be prioritized over others
 6. **Caching**: Cache weight calculations for frequently used items
 

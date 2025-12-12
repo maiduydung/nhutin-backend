@@ -138,10 +138,10 @@ class TestContainerBuildIntegration(unittest.TestCase):
         )
         
         # Weight should be in target range (or close to it)
-        # MIN_WEIGHT = 3000, MAX_WEIGHT = 3700
+        # MIN_WEIGHT = 3000, MAX_WEIGHT = 6000
         print(f"\nWeight constraint check:")
         print(f"  Total weight: {result['totalWeight']} kg")
-        print(f"  Target range: 3000-3700 kg")
+        print(f"  Target range: 3000-6000 kg")
         
         # Log if weight is below minimum (not a failure, just info)
         if result["totalWeight"] < 3000:
