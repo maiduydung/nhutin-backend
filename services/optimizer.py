@@ -31,6 +31,19 @@ class Optimizer:
         Main optimization function.
         Returns optimized item list with weights and costs.
         """
+        # Log optimization constraints with material loss factor
+        logger.info(
+            f"🔧 Optimization constraints: "
+            f"baseMaxWeight={self.BASE_MAX_WEIGHT}kg, "
+            f"materialLossFactor={self.MATERIAL_LOSS_FACTOR * 100:.0f}%, "
+            f"effectiveMaxWeight={self.MAX_WEIGHT}kg, "
+            f"maxProfitMargin={self.MAX_PROFIT_MARGIN * 100:.0f}%"
+        )
+        logger.info(
+            f"📦 Input: containerType={containerType}, length={containerLength}m, "
+            f"model={itemModelType}, slat={slatType}, receiptPrice={receiptPrice:,.0f}"
+        )
+        
         # Get fixed items
         walkingFloorWeight, walkingFloorType = (
             self.weightCalculator.calculateWalkingFloorWeight(itemModelType)
@@ -185,6 +198,16 @@ class Optimizer:
                     f"cost={totalCost:,.0f}, margin={profitMargin:.2f}%"
                 )
 
+        # Calculate estimated usable weight after material loss
+        estimatedUsableWeight = round(totalWeight * (1 - self.MATERIAL_LOSS_FACTOR), 2)
+        
+        # Log final results
+        logger.info(
+            f"✅ Optimization complete: "
+            f"totalWeight={totalWeight:.2f}kg (usable after {self.MATERIAL_LOSS_FACTOR * 100:.0f}% loss: {estimatedUsableWeight:.2f}kg), "
+            f"cost={totalCost:,.0f}, margin={profitMargin:.2f}%"
+        )
+        
         return {
             "items": allItems,
             "totalWeight": round(totalWeight, 2),
@@ -193,6 +216,17 @@ class Optimizer:
             "profit": round(profit, 2),
             "profitMargin": round(profitMargin, 2),
             "containerBuiltFromMaterials": needToBuild and len(builtContainerItems) > 0,
+            # Material loss factor info for frontend display
+            "constraints": {
+                "baseMaxWeight": self.BASE_MAX_WEIGHT,
+                "materialLossFactor": self.MATERIAL_LOSS_FACTOR,
+                "materialLossPercent": round(self.MATERIAL_LOSS_FACTOR * 100, 1),
+                "effectiveMaxWeight": self.MAX_WEIGHT,
+                "maxProfitMargin": self.MAX_PROFIT_MARGIN,
+                "maxProfitMarginPercent": round(self.MAX_PROFIT_MARGIN * 100, 1),
+                "minWeight": self.MIN_WEIGHT,
+            },
+            "estimatedUsableWeight": estimatedUsableWeight,
         }
     
     def _boostAluminumForWeight(

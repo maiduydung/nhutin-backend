@@ -74,6 +74,9 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
             "profit": result["profit"],
             "profitMargin": result["profitMargin"],
             "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
+            # Material loss factor and constraints for frontend display
+            "constraints": result.get("constraints", {}),
+            "estimatedUsableWeight": result.get("estimatedUsableWeight", result["totalWeight"]),
         }
         logger.info(f"✅ Response payload: {responsePayload}")
         
