@@ -1,0 +1,113 @@
+name: Deploy DB Ingestion Service
+
+on:
+  push:
+    branches:
+      - DBIngestion
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_FUNCTIONAPP_NAME: "nhutin-db-ingestion-prod"
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: "."
+  PYTHON_VERSION: "3.11"
+  EXPECTED_FUNCTION_NAME: "DB Ingestion"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🧪 Install Azure Functions Core Tools
+        run: |
+          echo "🔍 Python version:"
+          python --version
+          echo "📦 Installing Azure Functions Core Tools..."
+          npm install -g azure-functions-core-tools@4 --unsafe-perm true
+          echo "✅ Ready for deployment"
+
+      - name: 🔐 Login to Azure with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_NHUTIN_GH_DEPLOYER_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_NHUTIN_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🧾 Show current Azure account
+        run: |
+          echo "🔑 Verifying Azure identity..."
+          az account show --output table
+
+      - name: 🛡️ Pre-deploy validation
+        run: |
+          echo "🔍 Validating deployment target..."
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Target Function App: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
+          echo "Expected Function: ${{ env.EXPECTED_FUNCTION_NAME }}"
+
+          # Verify branch matches expected function app
+          if [[ "${{ github.ref_name }}" != "DBIngestion" ]]; then
+            echo "❌ ERROR: This workflow should only run from DBIngestion branch!"
+            echo "Current branch: ${{ github.ref_name }}"
+            exit 1
+          fi
+
+          echo "✅ Pre-deploy validation passed"
+
+      - name: 🚀 Deploy to Azure Function App (Flex Consumption)
+        run: |
+          func azure functionapp publish ${{ env.AZURE_FUNCTIONAPP_NAME }} --python
+
+      - name: ⏳ Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: 🔍 Post-deploy verification
+        run: |
+          echo "🔍 Verifying deployment..."
+
+          HEALTH_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
+          echo "Checking: $HEALTH_URL"
+
+          # Retry up to 5 times with 10s delay
+          for i in {1..5}; do
+            echo "Attempt $i/5..."
+            RESPONSE=$(curl -s "$HEALTH_URL" || echo '{"status":"CURL_FAILED"}')
+            echo "Response: $RESPONSE"
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.status // "UNKNOWN"')
+            MESSAGE=$(echo "$RESPONSE" | jq -r '.message // ""')
+            echo "Status: $STATUS"
+            echo "Message: $MESSAGE"
+
+            if [[ "$STATUS" == "ok" ]] && [[ "$MESSAGE" == *"DB Ingestion"* ]]; then
+              echo "✅ Deployment verified! Correct function is running."
+              exit 0
+            elif [[ "$STATUS" == "CURL_FAILED" || "$STATUS" == "UNKNOWN" ]]; then
+              echo "⏳ Health endpoint not ready yet, retrying in 10s..."
+              sleep 10
+            else
+              echo "❌ DEPLOYMENT MISMATCH DETECTED!"
+              echo "Expected status: ok with message containing 'DB Ingestion'"
+              echo "Got status: $STATUS"
+              echo "Got message: $MESSAGE"
+              echo "⚠️ Wrong code may have been deployed!"
+              exit 1
+            fi
+          done
+
+          echo "❌ Health check failed after 5 attempts"
+          exit 1
+
+      - name: ✅ Done
+        run: echo "🎉 Deployed and verified DB Ingestion Function App!"
