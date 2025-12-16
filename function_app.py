@@ -9,10 +9,10 @@ from services.inventory import Inventory
 from config import logger
 
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+app = func.FunctionApp()
 
 
-@app.function_name(name="health")
+@app.function_name(name="health", auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="health", methods=["GET"])
 def health(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """Simple health check endpoint."""
@@ -23,7 +23,7 @@ def health(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     )
 
 
-@app.function_name(name="ingest")
+@app.function_name(name="ingest", auth_level=func.AuthLevel.FUNCTION)
 @app.route(route="ingest", methods=["POST"])
 def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """
@@ -70,7 +70,7 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
             status_code=500,
         )
 # Ingest receipts from PDF files
-@app.function_name(name="ingestReceipts")
+@app.function_name(name="ingestReceipts", auth_level=func.AuthLevel.FUNCTION)
 @app.route(route="ingest-receipts", methods=["POST"])
 def ingestReceipts(req: func.HttpRequest) -> func.HttpResponse:
     # PDF-specific processing with OCR, etc.
@@ -83,7 +83,7 @@ def ingestReceipts(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
     )
 
-@app.function_name(name="ingestInventory")
+@app.function_name(name="ingestInventory", auth_level=func.AuthLevel.FUNCTION)
 @app.route(route="ingest-inventory", methods=["POST"])
 def ingestInventory(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """
