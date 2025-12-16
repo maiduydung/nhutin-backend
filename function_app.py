@@ -12,8 +12,8 @@ from config import logger
 app = func.FunctionApp()
 
 
-@app.function_name(name="health", auth_level=func.AuthLevel.ANONYMOUS)
-@app.route(route="health", methods=["GET"])
+@app.function_name(name="health")
+@app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def health(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """Simple health check endpoint."""
     return func.HttpResponse(
@@ -23,8 +23,8 @@ def health(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     )
 
 
-@app.function_name(name="ingest", auth_level=func.AuthLevel.FUNCTION)
-@app.route(route="ingest", methods=["POST"])
+@app.function_name(name="ingest")
+@app.route(route="ingest", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """
     Trigger inventory ingestion from the latest Excel file in Google Drive.
@@ -70,8 +70,8 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
             status_code=500,
         )
 # Ingest receipts from PDF files
-@app.function_name(name="ingestReceipts", auth_level=func.AuthLevel.FUNCTION)
-@app.route(route="ingest-receipts", methods=["POST"])
+@app.function_name(name="ingestReceipts")
+@app.route(route="ingest-receipts", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def ingestReceipts(req: func.HttpRequest) -> func.HttpResponse:
     # PDF-specific processing with OCR, etc.
     return func.HttpResponse(
@@ -83,8 +83,8 @@ def ingestReceipts(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
     )
 
-@app.function_name(name="ingestInventory", auth_level=func.AuthLevel.FUNCTION)
-@app.route(route="ingest-inventory", methods=["POST"])
+@app.function_name(name="ingestInventory")
+@app.route(route="ingest-inventory", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def ingestInventory(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
     """
     Ingest inventory data from an uploaded Excel file.
