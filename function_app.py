@@ -69,5 +69,74 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
             mimetype="application/json",
             status_code=500,
         )
+# Ingest receipts from PDF files
+@app.function_name(name="ingestReceipts")
+@app.route(route="ingest-receipts", methods=["POST"])
+def ingestReceipts(req: func.HttpRequest) -> func.HttpResponse:
+    # PDF-specific processing with OCR, etc.
+    return func.HttpResponse(
+        body=json.dumps({
+            "status": "ok",
+            "message": "Receipts ingestion not implemented yet",
+        }),
+        mimetype="application/json",
+        status_code=200,
+    )
+
+@app.function_name(name="ingestInventory")
+@app.route(route="ingest-inventory", methods=["POST"])
+def ingestInventory(req: func.HttpRequest) -> func.HttpResponse:  # noqa: ARG001
+    """
+    Ingest inventory data from an uploaded Excel file.
+
+    Route: /api/ingest-inventory
+    Body: Raw Excel file bytes (.xlsx)
+    """
+    try:
+        fileData = req.get_body()
+
+        if not fileData:
+            return func.HttpResponse(
+                body=json.dumps({
+                    "status": "error",
+                    "message": "No file data received in request body",
+                }),
+                mimetype="application/json",
+                status_code=400,
+            )
+
+        # Write to temp file (Azure Functions only allows /tmp writes)
+        tempFilePath = os.path.join(tempfile.gettempdir(), "inventory_upload.xlsx")
+
+        with open(tempFilePath, "wb") as f:
+            f.write(fileData)
+
+        logger.info(f"📁 Received inventory file upload, size={len(fileData)} bytes")
+
+        Inventory.ingestInventoryFromExcel(tempFilePath)
+
+        # Cleanup temp file
+        if os.path.exists(tempFilePath):
+            os.remove(tempFilePath)
+
+        return func.HttpResponse(
+            body=json.dumps({
+                "status": "ok",
+                "message": "Inventory ingestion complete",
+            }),
+            mimetype="application/json",
+            status_code=200,
+        )
+
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Error during inventory ingestion: {e}")
+        return func.HttpResponse(
+            body=json.dumps({
+                "status": "error",
+                "message": f"Error processing inventory file: {str(e)}",
+            }),
+            mimetype="application/json",
+            status_code=500,
+        )
 
 
