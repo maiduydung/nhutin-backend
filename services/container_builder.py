@@ -21,6 +21,23 @@ class ContainerBuilder:
         # Use specs from config.py
         self.specs = CONTAINER_BUILD_SPECS
         self.materialTypes = CONTAINER_MATERIAL_TYPES
+        # Slat parameters (set via setters before building)
+        self.slatType = "112mm"
+        self.thickness = 6
+        self.containerLength = 12.192
+
+    def setSlatParams(self, slatType: str, thickness: int, containerLength: float):
+        """Set slat parameters for aluminum calculation."""
+        self.slatType = slatType
+        self.thickness = thickness
+        self.containerLength = containerLength
+
+    def _calculateAluminumNeeded(self) -> float:
+        """Calculate aluminum needed based on slat params (dynamic, not fixed)."""
+        weight, density, bars = self.weightCalculator.calculateAluminumBarWeight(
+            self.containerLength, self.slatType, self.thickness, self.db
+        )
+        return weight
 
     def canBuildContainer(self, containerSize: str) -> dict[str, Any]:
         """
@@ -75,8 +92,9 @@ class ContainerBuilder:
         totalWeight += sheetResult["totalWeight"]
 
         # Check aluminum availability (including compensation for steel shortfall)
-        # Need: base aluminum (for walking floor slats) + steel shortfall compensation
-        totalAluminumNeeded = specs["aluminum_kg"] + steelShortfall
+        # Calculate aluminum dynamically based on slat params (not fixed from specs)
+        baseAluminumNeeded = self._calculateAluminumNeeded()
+        totalAluminumNeeded = baseAluminumNeeded + steelShortfall
         alumResult = self._checkAluminumAvailability(totalAluminumNeeded)
         materials.extend(alumResult["items"])
         totalCost += alumResult["totalCost"]
@@ -84,7 +102,7 @@ class ContainerBuilder:
 
         # Calculate if we have enough materials overall
         # We need at least 50% of total required weight to build (lower threshold due to material flexibility)
-        requiredWeight = steelNeeded + specs["aluminum_kg"]
+        requiredWeight = steelNeeded + baseAluminumNeeded
         # Add estimated galvanized sheet weight (approx 9 kg/m for typical sheets)
         requiredWeight += specs["galvanized_sheet_m"] * 9
         
@@ -221,7 +239,9 @@ class ContainerBuilder:
         # Scale requirements (use steel_frame_kg as primary steel requirement)
         scaledSteelKg = specs["steel_frame_kg"] * scaleFactor
         scaledSheetM = specs["galvanized_sheet_m"] * scaleFactor
-        scaledAlumKg = specs["aluminum_kg"] * scaleFactor
+        # Calculate aluminum dynamically based on slat params
+        baseAluminumKg = self._calculateAluminumNeeded()
+        scaledAlumKg = baseAluminumKg * scaleFactor
 
         # Get scaled materials - steel first
         steelResult = self._checkSteelAvailability(scaledSteelKg)
@@ -449,47 +469,38 @@ class ContainerBuilder:
 
 
 def main():
-    """Test container builder."""
+    """Test container builder with different slat/thickness combinations."""
     db = Database()
     builder = ContainerBuilder(db)
 
-    # Test 20ft container build check
-    print("=" * 50)
-    print("Checking 20ft container build capability:")
-    result = builder.canBuildContainer("20ft")
-    print(f"  Can build: {result['canBuild']}")
-    print(f"  Total cost: {result['totalCost']:,.0f} VND")
-    print(f"  Total weight: {result['totalWeight']:.0f} kg")
-    if result["missingMaterials"]:
-        print(f"  Missing: {result['missingMaterials']}")
+    # Test different slat/thickness combinations for 40ft
+    testCases = [
+        ("40ft", "97mm", 6, 12.192),   # 40ft, 97mm, 6mm
+        ("40ft", "112mm", 6, 12.192),  # 40ft, 112mm, 6mm
+        ("40ft", "112mm", 8, 12.192),  # 40ft, 112mm, 8mm
+        ("20ft", "97mm", 6, 6.096),    # 20ft, 97mm, 6mm
+    ]
 
-    # Test 40ft container build check
-    print("\n" + "=" * 50)
-    print("Checking 40ft container build capability:")
-    result = builder.canBuildContainer("40ft")
-    print(f"  Can build: {result['canBuild']}")
-    print(f"  Total cost: {result['totalCost']:,.0f} VND")
-    print(f"  Total weight: {result['totalWeight']:.0f} kg")
-    if result["missingMaterials"]:
-        print(f"  Missing: {result['missingMaterials']}")
-
-    # Test actual build
-    print("\n" + "=" * 50)
-    print("Attempting to build 20ft container:")
-    buildResult = builder.buildContainer(
-        containerSize="20ft",
-        maxCost=600_000_000 * 0.75,
-        currentCost=300_000_000,
-        currentWeight=1500,
-        maxWeight=6000,
-    )
-    print(f"  Success: {buildResult['success']}")
-    if buildResult["success"]:
-        print(f"  Materials count: {len(buildResult['items'])}")
-        print(f"  Total cost: {buildResult['totalCost']:,.0f} VND")
-        print(f"  Total weight: {buildResult['totalWeight']:.0f} kg")
-    else:
-        print(f"  Reason: {buildResult.get('reason', 'Unknown')}")
+    for containerSize, slatType, thickness, length in testCases:
+        print("=" * 60)
+        print(f"Testing: {containerSize}, {slatType}, {thickness}mm thick")
+        
+        # Set slat params
+        builder.setSlatParams(slatType, thickness, length)
+        
+        # Check build capability
+        result = builder.canBuildContainer(containerSize)
+        print(f"  Can build: {result['canBuild']}")
+        print(f"  Total cost: {result['totalCost']:,.0f} VND")
+        print(f"  Total weight: {result['totalWeight']:.0f} kg")
+        
+        # Find aluminum item to check quantity
+        for item in result.get("materials", []):
+            if item.get("type") == "aluminum":
+                print(f"  Aluminum: {item['quantity']:.2f} kg")
+        
+        if result.get("missingMaterials"):
+            print(f"  Missing: {result['missingMaterials']}")
 
     db.close()
 

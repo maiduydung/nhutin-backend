@@ -39,15 +39,26 @@ These items are **always included** in every container configuration:
 - **Cost**: `unitPrice × 1` (unitPrice from latest inventory record)
 
 ### 2. Aluminum Bars
-- **Quantity**: Calculated dynamically
+- **Quantity**: Calculated dynamically based on `slatType` and `thickness`
 - **Weight Formula**: `containerLength × density_kg_per_m × bars_per_container`
 - **Selection Logic**:
-  1. Look up `aluminum_bar_constants` table using `slatType` (e.g., "97mm" or "112mm")
-  2. Try highest density first
-  3. Check if inventory has enough (`final_quantity ≥ calculated_weight`)
-  4. If insufficient, fall back to lower density option
-- **Cost**: Uses `unitPrice` from "Nhôm_thanh_none" inventory item
+  1. Look up `aluminum_bar_constants` table using both `slatType` (97mm or 112mm) AND `thickness` (6mm or 8mm)
+  2. Query returns exact match for size_mm and thickness_mm
+  3. If no exact match, falls back to any available thickness for that size
+- **Cost**: Uses `unitPrice` from aluminum inventory item
 - **Note**: Quantity in kg equals the calculated weight
+
+**Aluminum Bar Constants Table:**
+| size_mm | thickness_mm | density_kg_per_m | bars_per_container |
+|---------|--------------|------------------|-------------------|
+| 97      | 6            | 2.313            | 24                |
+| 112     | 6            | 2.529            | 21                |
+| 112     | 8            | 3.313            | 21                |
+
+**Example Calculations (40ft container, 12.192m):**
+- 97mm/6mm: 12.192 × 2.313 × 24 = **676.77 kg**
+- 112mm/6mm: 12.192 × 2.529 × 21 = **647.29 kg**
+- 112mm/8mm: 12.192 × 3.313 × 21 = **848.12 kg**
 
 ## Phase 2: Variable Items Optimization
 
@@ -136,7 +147,7 @@ weight = WALKING_FLOORS[itemModelType]["weight"] × quantity
 weight = containerLength × density_kg_per_m × bars_per_container
 ```
 - Density and bars from `aluminum_bar_constants` table
-- Selected based on `slatType` (97mm or 112mm)
+- Selected based on `slatType` (97mm or 112mm) AND `thickness` (6mm or 8mm)
 
 ### 3. Steel Items (`unit = "kg"`)
 ```python
@@ -194,10 +205,10 @@ This means:
 ## Algorithm Pseudocode
 
 ```
-function optimize(containerLength, itemModelType, slatType, receiptPrice):
+function optimize(containerLength, itemModelType, slatType, thickness, receiptPrice):
     // Phase 1: Fixed Items
     walkingFloor = getWalkingFloor(itemModelType)  // 1 set
-    aluminumWeight = calculateAluminumWeight(containerLength, slatType)
+    aluminumWeight = calculateAluminumWeight(containerLength, slatType, thickness)
     aluminumItem = getAluminumItem(aluminumWeight)
     
     fixedWeight = walkingFloor.weight + aluminumWeight
@@ -304,11 +315,12 @@ if currentTotalWeight == previousWeight and currentCost == previousCost:
 - `containerLength`: 12.192 m
 - `itemModelType`: "R2DX"
 - `slatType`: "97mm"
+- `thickness`: 6 (mm)
 - `receiptPrice`: 600,000,000 VND
 
 **Phase 1**:
 - Walking floor: R2DX set (751 kg, 248,802,602 VND)
-- Aluminum: 12.192 × 2.313 × 24 = 676.8 kg (83,540,339 VND)
+- Aluminum (97mm/6mm): 12.192 × 2.313 × 24 = 676.8 kg (83,540,339 VND)
 - Fixed total: 1427.8 kg, 332,342,941 VND
 
 **Phase 2**:
@@ -368,18 +380,19 @@ Based on **THUYETMINHKYTHUAT.pdf** - Walking Floor S-Drive KSD 4.25" system:
 CONTAINER_BUILD_SPECS = {
     "20ft": {
         "length_m": 6.096,
-        "aluminum_kg": 378,       # ~50% of 40ft
-        "steel_frame_kg": 492,    # ~50% of 40ft
+        "steel_frame_kg": 492,
         "galvanized_sheet_m": 50,
     },
     "40ft": {
         "length_m": 12.192,
-        "aluminum_kg": 757,       # 756.76 kg (25 bars × 12m × 2.53 kg/m)
         "steel_frame_kg": 983,    # Combined: 332.34 + 398.48 + 252.41 kg
         "galvanized_sheet_m": 100,
     },
 }
 ```
+
+**Note**: Aluminum is calculated dynamically based on `slatType` and `thickness` (not fixed values).
+The formula `containerLength × density_kg_per_m × bars_per_container` is applied using values from `aluminum_bar_constants` table.
 
 **40ft Material Breakdown (from technical document):**
 

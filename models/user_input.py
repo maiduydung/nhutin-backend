@@ -13,7 +13,8 @@ class UserInput(BaseModel):
     containerType: str = Field(..., min_length=1, description="Container category (container_20ft, container_40ft, etc.)")
     containerLength: float = Field(..., description="Container length in meters.")
     itemModelType: str = Field(..., min_length=1, description="Inventory model code, e.g., R2DX.")
-    slatType: str = Field(..., min_length=1, description="Slat specification such as 97mm or 122mm.")
+    slatType: str = Field(..., min_length=1, description="Slat specification: 97mm or 112mm.")
+    thickness: int = Field(default=6, description="Aluminum bar thickness: 6 or 8 (mm).")
     receiptPrice: float = Field(..., description="Receipt price in VND.")
 
     def toDict(self) -> dict[str, Any]:
@@ -32,6 +33,7 @@ def main() -> None:
         "containerLength": 6.06,
         "itemModelType": "R2DX",
         "slatType": "97mm",
+        "thickness": 6,
         "receiptPrice": 1000000,
     }
     userInput = UserInput.model_validate(samplePayload)

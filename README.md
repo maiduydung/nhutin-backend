@@ -9,7 +9,8 @@ This is an Azure Functions-based backend service for managing inventory items an
 The system processes user requests containing:
 - **Container specifications** (type, length)
 - **Item model type** (e.g., R2DX)
-- **Slat specifications** (e.g., 97mm, 122mm)
+- **Slat specifications** (e.g., 97mm, 112mm)
+- **Aluminum bar thickness** (6mm or 8mm)
 
 It then:
 1. Fetches required items from the database based on these specifications
@@ -131,7 +132,16 @@ Stores constants for calculating aluminum bar weights based on slat specificatio
 | `density_kg_per_m` | NUMERIC | Weight density in kg per meter |
 | `bars_per_container` | INTEGER | Number of bars per container (21 or 24) |
 
+**Current Data:**
+| size_mm | thickness_mm | density_kg_per_m | bars_per_container |
+|---------|--------------|------------------|-------------------|
+| 97      | 6            | 2.313            | 24                |
+| 112     | 6            | 2.529            | 21                |
+| 112     | 8            | 3.313            | 21                |
+
 **Usage**: Used to calculate aluminum bar weight: `containerLength × density_kg_per_m × bars_per_container`
+- Query uses both `slatType` (size_mm) AND `thickness` (thickness_mm) from user input
+- Example: 40ft container (12.192m), 97mm slat, 6mm thick → 12.192 × 2.313 × 24 = **676.77 kg**
 
 ## API Endpoints
 
@@ -162,6 +172,7 @@ Content-Type: application/json
   "containerLength": 6.096,              // Length in meters (e.g., 6.096 for 20ft container)
   "itemModelType": "R2DX",               // Walking floor model: "R2DX", "KSD", or "KMD"
   "slatType": "97mm",                    // Slat specification: "97mm" or "112mm"
+  "thickness": 6,                        // Aluminum bar thickness: 6 or 8 (mm), default: 6
   "receiptPrice": 600000000              // Receipt price in VND
 }
 ```

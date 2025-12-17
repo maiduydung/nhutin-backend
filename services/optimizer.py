@@ -26,6 +26,7 @@ class Optimizer:
         slatType: str,
         receiptPrice: float,
         containerType: str = None,
+        thickness: int = 6,
     ) -> dict[str, Any]:
         """
         Main optimization function.
@@ -41,8 +42,12 @@ class Optimizer:
         )
         logger.info(
             f"📦 Input: containerType={containerType}, length={containerLength}m, "
-            f"model={itemModelType}, slat={slatType}, receiptPrice={receiptPrice:,.0f}"
+            f"model={itemModelType}, slat={slatType}, thickness={thickness}mm, "
+            f"receiptPrice={receiptPrice:,.0f}"
         )
+        
+        # Set slat params on container builder for dynamic aluminum calculation
+        self.containerBuilder.setSlatParams(slatType, thickness, containerLength)
         
         # Get fixed items
         walkingFloorWeight, walkingFloorType = (
@@ -70,9 +75,9 @@ class Optimizer:
             )
         else:
             # Normal case: calculate aluminum bars separately
-            aluminumWeight, hasEnoughAlum = (
+            aluminumWeight, density, bars = (
                 self.weightCalculator.calculateAluminumBarWeight(
-                    containerLength, slatType, self.db
+                    containerLength, slatType, thickness, self.db
                 )
             )
             aluminumItem = self._getAluminumItem(aluminumWeight)

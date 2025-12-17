@@ -22,50 +22,64 @@ class WeightCalculator:
 
     @staticmethod
     def calculateAluminumBarWeight(
-        containerLength: float, slatType: str, db: Database
-    ) -> tuple[float, bool]:
+        containerLength: float, slatType: str, thickness: int, db: Database
+    ) -> tuple[float, float, int]:
         """
-        Calculate aluminum bar weight from constants.
-        Returns: (weight_kg, has_enough_inventory)
+        Calculate aluminum bar weight from constants based on slatType and thickness.
+        
+        Args:
+            containerLength: Container length in meters
+            slatType: Slat size ("97mm" or "112mm")
+            thickness: Bar thickness (6 or 8 mm)
+            db: Database connection
+        
+        Returns: (weight_kg, density_kg_per_m, bars_per_container)
         """
-        # Get aluminum constants for slatType
         sizeMm = int(slatType.replace("mm", ""))
-        constants = db.executeQuery(
+        
+        # Query for exact match of size_mm and thickness_mm
+        result = db.executeQuery(
             """
             SELECT density_kg_per_m, bars_per_container
             FROM aluminum_bar_constants
-            WHERE size_mm = %s
-            ORDER BY density_kg_per_m DESC
+            WHERE size_mm = %s AND thickness_mm = %s
+            LIMIT 1
             """,
-            (sizeMm,),
+            (sizeMm, thickness),
         )
 
-        if not constants:
-            raise ValueError(f"No aluminum constants found for slatType: {slatType}")
-
-        # Try highest density first
-        for density, bars in constants:
-            weight = containerLength * float(density) * bars
-            
-            # Check if we have enough inventory
-            inventory = db.executeQuery(
+        if not result:
+            # Fallback: try any thickness for this size
+            logger.warning(
+                f"No exact match for slatType={slatType}, thickness={thickness}mm. "
+                f"Trying fallback..."
+            )
+            result = db.executeQuery(
                 """
-                SELECT final_quantity
-                FROM inventory_records ir
-                JOIN items i ON ir.item_id = i.id
-                WHERE i.type = 'aluminum'
-                ORDER BY ir.record_date DESC
+                SELECT density_kg_per_m, bars_per_container
+                FROM aluminum_bar_constants
+                WHERE size_mm = %s
+                ORDER BY thickness_mm ASC
                 LIMIT 1
-                """
+                """,
+                (sizeMm,),
             )
             
-            if inventory and inventory[0][0] >= weight:
-                return weight, True
+        if not result:
+            raise ValueError(
+                f"No aluminum constants found for slatType={slatType}, thickness={thickness}mm"
+            )
 
-        # If no density works, use the lowest one anyway
-        lowestDensity, bars = constants[-1]
-        weight = containerLength * float(lowestDensity) * bars
-        return weight, False
+        density = float(result[0][0])
+        bars = int(result[0][1])
+        weight = containerLength * density * bars
+        
+        logger.info(
+            f"Aluminum calculation: {containerLength}m × {density} kg/m × {bars} bars = {weight:.2f} kg "
+            f"(slatType={slatType}, thickness={thickness}mm)"
+        )
+        
+        return weight, density, bars
 
     @staticmethod
     def calculateGalvanizedSheetWeightPerMeter(itemName: str) -> float:
@@ -151,17 +165,25 @@ def main():
     weight, itemType = WeightCalculator.calculateWalkingFloorWeight("R2DX")
     print(f"R2DX weight: {weight} kg, type: {itemType}")
     
-    # Test aluminum bars
-    alumWeight, hasEnough = WeightCalculator.calculateAluminumBarWeight(
-        6.096, "97mm", db
-    )
-    print(f"Aluminum bars (97mm, 6.096m): {alumWeight} kg, enough: {hasEnough}")
+    # Test aluminum bars with different slat/thickness combos
+    print("\n--- Aluminum Bar Weight Tests ---")
+    testCases = [
+        (12.192, "97mm", 6),   # 40ft, 97mm, 6mm thick
+        (12.192, "112mm", 6),  # 40ft, 112mm, 6mm thick
+        (12.192, "112mm", 8),  # 40ft, 112mm, 8mm thick
+        (6.096, "97mm", 6),    # 20ft, 97mm, 6mm thick
+    ]
+    for length, slatType, thickness in testCases:
+        alumWeight, density, bars = WeightCalculator.calculateAluminumBarWeight(
+            length, slatType, thickness, db
+        )
+        print(f"  {length}m, {slatType}, {thickness}mm: {alumWeight:.2f} kg")
     
     # Test galvanized sheet
     weightPerM = WeightCalculator.calculateGalvanizedSheetWeightPerMeter(
         "Tôn mạ kẽm 0.95 x 1200"
     )
-    print(f"Galvanized sheet weight per meter: {weightPerM} kg/m")
+    print(f"\nGalvanized sheet weight per meter: {weightPerM} kg/m")
     
     db.close()
 
