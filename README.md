@@ -700,7 +700,7 @@ Row 6+: [Data Rows]
 | Type | Description | Examples | Default Unit |
 |------|-------------|----------|--------------|
 | `burning_fuel` | Fuel for burning/energy | Bã điều, Dầu DO, Than, Trấu viên | None |
-| `hydraulic_oil` | Lubricants and oils | Nhớt Hydraulic Oil, Engine Oil, Lubricant | `can` |
+| `hydraulic_oil` | Lubricants and oils | Nhớt Hydraulic Oil, Engine Oil, Lubricant | `barrel` |
 | `hydraulic_pump` | Hydraulic pumps | Bơm thuỷ lực | `pcs` |
 | `controller` | Control boxes | hộp điều khiển chế tạo | `set` |
 | `walking_floor_ksd` | Keith Walking Floor KSD series | KSD 4.25, Sàn di động KSD | `set` |
@@ -741,7 +741,8 @@ Units are normalized to standard formats:
 | `cái`, `cai`, `chiếc`, `chiec`, `pcs`, `piece` | `pcs` | Piece counts |
 | `bộ`, `bo`, `set` | `set` | Sets/assemblies |
 | `mét`, `met`, `meter`, `m` | `m` | Length measurements |
-| `phuy`, `thùng`, `thung`, `can` | `can` | Drums/barrels/cans (for oils) |
+| `phuy` | `barrel` | Oil drums/barrels (209L) |
+| `thùng`, `thung` | `box` | Boxes/crates |
 
 ---
 

@@ -110,7 +110,7 @@ class ItemNormalizer:
         'container': 'set',
         'controller': 'set',
         'hydraulic_pump': 'pcs',
-        'hydraulic_oil': 'can',
+        'hydraulic_oil': 'barrel',
     }
 
     # Unit normalization map (handles typos too)
@@ -136,10 +136,10 @@ class ItemNormalizer:
         'met': 'm',
         'meter': 'm',
         'm': 'm',
-        'phuy': 'can',  # Vietnamese for drum/barrel/can
+        'phuy': 'barrel',  # Vietnamese for drum/barrel/can
         'can': 'can',
-        'thùng': 'can',
-        'thung': 'can',
+        'thùng': 'box',
+        'thung': 'box',
     }
 
     @classmethod
@@ -282,8 +282,8 @@ def main():
         
         # Hydraulic oil (should NOT be hydraulic_pump!)
         ("Nhớt Hydraulic Oil 68 (BP) - 209L", "Nhớt Hydraulic Oil 68 (BP) - 209L", "Phuy"),
-        ("Engine Oil 10W40", "Engine Oil 10W40", "can"),
-        ("Lubricant SAE 30", "Lubricant SAE 30", None),  # Should get default 'can'
+        ("Engine Oil 10W40", "Engine Oil 10W40", "barrel"),
+        ("Lubricant SAE 30", "Lubricant SAE 30", None),  # Should get default 'barrel'
         
         # Equipment (should NOT be 'other')
         ("Bơm thuỷ lực", "Bơm thuỷ lực", "Cái"),
