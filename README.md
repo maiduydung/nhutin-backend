@@ -349,6 +349,8 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
 1. **Fixed Items** (always included):
    - Select 1 walking floor set matching `itemModelType`
    - Calculate and include aluminum bars based on `containerLength` and `slatType`
+   - Select 1 hydraulic pump (130cc for R2DX, 108cc for KSD/KMD/others)
+   - Include 1 barrel of hydraulic oil (200L, ~200kg)
 
 2. **Variable Items Selection** (Two-Pass):
    - **Pass 1 - Weight-Contributing Items**:

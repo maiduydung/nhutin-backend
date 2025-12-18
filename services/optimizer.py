@@ -19,6 +19,19 @@ class Optimizer:
         self.weightCalculator = WeightCalculator()
         self.containerBuilder = ContainerBuilder(db)
 
+    # Hydraulic pump selection by model type
+    HYDRAULIC_PUMP_MAP = {
+        "R2DX": "130cc",  # R2DX uses 130cc pump
+        "KSD": "108cc",   # KSD uses 108cc pump
+        "KMD": "108cc",   # KMD uses 108cc pump
+    }
+    
+    # Hydraulic oil constants
+    HYDRAULIC_OIL_LITERS = 200  # Full barrel (180-209L range, using 200L)
+    HYDRAULIC_OIL_DENSITY = 0.88  # kg/L for ISO VG 68
+    HYDRAULIC_OIL_DRUM_WEIGHT = 15  # kg for empty drum
+    HYDRAULIC_OIL_TOTAL_WEIGHT = 200  # ~185kg oil + 15kg drum ≈ 200kg
+
     def optimize(
         self,
         containerLength: float,
@@ -55,6 +68,12 @@ class Optimizer:
         )
         walkingFloorItem = self._getWalkingFloorItem(walkingFloorType, itemModelType, walkingFloorWeight)
         
+        # Get hydraulic pump (always included) - 130cc for R2DX, 108cc for others
+        hydraulicPumpItem = self._getHydraulicPumpItem(itemModelType)
+        
+        # Get hydraulic oil (always included) - full barrel 180-209L
+        hydraulicOilItem = self._getHydraulicOilItem()
+        
         # Get variable items for optimization (with container validation)
         variableItems = self._getVariableItems(containerType)
 
@@ -87,6 +106,14 @@ class Optimizer:
         fixedCost = walkingFloorItem["unitPrice"] * walkingFloorItem["quantity"]
         if aluminumItem:
             fixedCost += aluminumItem["unitPrice"] * aluminumItem["quantity"]
+        
+        # Add hydraulic pump and oil to fixed items
+        if hydraulicPumpItem:
+            fixedWeight += hydraulicPumpItem["weight"]
+            fixedCost += hydraulicPumpItem["totalValue"]
+        if hydraulicOilItem:
+            fixedWeight += hydraulicOilItem["weight"]
+            fixedCost += hydraulicOilItem["totalValue"]
 
         # If building container, BUILD IT FIRST to reserve materials
         builtContainerItems = []
@@ -139,6 +166,10 @@ class Optimizer:
         allItems = [walkingFloorItem]
         if aluminumItem:
             allItems.append(aluminumItem)
+        if hydraulicPumpItem:
+            allItems.append(hydraulicPumpItem)
+        if hydraulicOilItem:
+            allItems.append(hydraulicOilItem)
         allItems.extend(selectedItems)
         allItems.extend(builtContainerItems)
 
@@ -563,10 +594,179 @@ class Optimizer:
             "weight": round(aluminumWeight, 2),
         }
 
+    def _getHydraulicPumpItem(self, itemModelType: str) -> dict[str, Any] | None:
+        """
+        Get hydraulic pump based on walking floor model type.
+        - R2DX: 130cc pump
+        - KSD, KMD, or others: 108cc pump
+        
+        Always includes 1 pump in the BOM.
+        """
+        # Determine pump size based on model type
+        pumpSize = self.HYDRAULIC_PUMP_MAP.get(itemModelType.upper(), "108cc")
+        
+        # Query for pump matching the size
+        result = self.db.executeQuery(
+            """
+            SELECT DISTINCT ON (i.id)
+                i.id, i.code, i.name, i.unit,
+                ir.final_quantity, ir.final_value,
+                CASE WHEN ir.final_quantity > 0 
+                     THEN ir.final_value::numeric / ir.final_quantity 
+                     ELSE 0 END as unit_price
+            FROM items i
+            JOIN inventory_records ir ON i.id = ir.item_id
+            WHERE i.type = 'hydraulic_pump' 
+              AND ir.final_quantity > 0
+              AND (i.name ILIKE %s OR i.code ILIKE %s)
+            ORDER BY i.id, ir.record_date DESC
+            LIMIT 1
+            """,
+            (f"%{pumpSize}%", f"%{pumpSize}%"),
+        )
+
+        if not result:
+            # Fallback: get any available hydraulic pump
+            logger.warning(
+                f"No {pumpSize} hydraulic pump found, trying any available pump"
+            )
+            result = self.db.executeQuery(
+                """
+                SELECT DISTINCT ON (i.id)
+                    i.id, i.code, i.name, i.unit,
+                    ir.final_quantity, ir.final_value,
+                    CASE WHEN ir.final_quantity > 0 
+                         THEN ir.final_value::numeric / ir.final_quantity 
+                         ELSE 0 END as unit_price
+                FROM items i
+                JOIN inventory_records ir ON i.id = ir.item_id
+                WHERE i.type = 'hydraulic_pump' AND ir.final_quantity > 0
+                ORDER BY i.id, ir.record_date DESC
+                LIMIT 1
+                """
+            )
+
+        if not result:
+            logger.warning("No hydraulic pump available in inventory")
+            return None
+
+        row = result[0]
+        quantity = 1  # Always 1 pump
+        unitPrice = float(row[6])
+        # Pump weight: approximately 50kg per unit
+        pumpWeight = 50.0
+
+        logger.info(
+            f"🔧 Selected hydraulic pump: {row[1]} ({pumpSize}) - "
+            f"qty: {quantity}, weight: {pumpWeight}kg"
+        )
+
+        return {
+            "id": row[0],
+            "code": row[1],
+            "name": row[2],
+            "unit": row[3],
+            "type": "hydraulic_pump",
+            "quantity": quantity,
+            "unitPrice": unitPrice,
+            "totalValue": unitPrice * quantity,
+            "weight": pumpWeight,
+        }
+
+    def _getHydraulicOilItem(self) -> dict[str, Any] | None:
+        """
+        Get hydraulic oil (full barrel 180-209L).
+        
+        Oil specs:
+        - Volume: 180-209L (using 200L as standard full barrel)
+        - Density: ~0.88 kg/L (ISO VG 68)
+        - Oil weight: 200L × 0.88 = ~176kg
+        - With drum: ~200kg total
+        
+        Always includes 1 barrel in the BOM.
+        """
+        # Query for hydraulic oil - look for "dầu" (oil) in burning_fuel type
+        # or specifically "hydraulic" / "thủy lực" in the name
+        result = self.db.executeQuery(
+            """
+            SELECT DISTINCT ON (i.id)
+                i.id, i.code, i.name, i.unit,
+                ir.final_quantity, ir.final_value,
+                CASE WHEN ir.final_quantity > 0 
+                     THEN ir.final_value::numeric / ir.final_quantity 
+                     ELSE 0 END as unit_price
+            FROM items i
+            JOIN inventory_records ir ON i.id = ir.item_id
+            WHERE ir.final_quantity >= %s
+              AND (
+                  i.name ILIKE '%%dầu%%thủy lực%%'
+                  OR i.name ILIKE '%%hydraulic%%oil%%'
+                  OR i.name ILIKE '%%dầu%%nhờn%%'
+                  OR (i.type = 'burning_fuel' AND i.name ILIKE '%%dầu%%')
+              )
+            ORDER BY i.id, ir.record_date DESC
+            LIMIT 1
+            """,
+            (self.HYDRAULIC_OIL_LITERS,),
+        )
+
+        if not result:
+            # Fallback: any oil/fuel with sufficient quantity
+            logger.warning(
+                f"No hydraulic oil ({self.HYDRAULIC_OIL_LITERS}L+) found, "
+                f"trying any oil with sufficient quantity"
+            )
+            result = self.db.executeQuery(
+                """
+                SELECT DISTINCT ON (i.id)
+                    i.id, i.code, i.name, i.unit,
+                    ir.final_quantity, ir.final_value,
+                    CASE WHEN ir.final_quantity > 0 
+                         THEN ir.final_value::numeric / ir.final_quantity 
+                         ELSE 0 END as unit_price
+                FROM items i
+                JOIN inventory_records ir ON i.id = ir.item_id
+                WHERE ir.final_quantity >= %s
+                  AND i.type = 'burning_fuel'
+                ORDER BY i.id, ir.record_date DESC
+                LIMIT 1
+                """,
+                (self.HYDRAULIC_OIL_LITERS,),
+            )
+
+        if not result:
+            logger.warning("No hydraulic oil available in inventory")
+            return None
+
+        row = result[0]
+        # Quantity: full barrel in range 180-209L, using 200L
+        quantity = self.HYDRAULIC_OIL_LITERS
+        unitPrice = float(row[6])  # Price per liter
+        # Weight: ~200kg for a full 200L barrel with drum
+        oilWeight = self.HYDRAULIC_OIL_TOTAL_WEIGHT
+
+        logger.info(
+            f"🛢️ Selected hydraulic oil: {row[1]} - "
+            f"qty: {quantity}L, weight: {oilWeight}kg"
+        )
+
+        return {
+            "id": row[0],
+            "code": row[1],
+            "name": row[2],
+            "unit": row[3],
+            "type": "burning_fuel",
+            "quantity": quantity,
+            "unitPrice": unitPrice,
+            "totalValue": unitPrice * quantity,
+            "weight": oilWeight,
+        }
+
     def _getVariableItems(self, containerType: str = None) -> list[dict[str, Any]]:
         """Get all variable items available for optimization.
         
-        Includes all item types except walking floors and aluminum (which are fixed items).
+        Includes all item types except walking floors, aluminum, hydraulic pump, 
+        and hydraulic oil (which are fixed items - always included in BOM).
         This allows the optimizer to use whatever inventory is available.
         
         Args:
@@ -574,10 +774,10 @@ class Optimizer:
                           Used to validate and filter container items.
         """
         # Include all item types that can be used as variable items
-        # Excludes: walking_floor_*, aluminum (these are fixed items)
+        # Excludes: walking_floor_*, aluminum, hydraulic_pump, burning_fuel (these are fixed items)
         variableTypes = [
             'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
-            'galvanized_sheet', 'stainless_steel', 'hydraulic_pump', 'container'
+            'galvanized_sheet', 'stainless_steel', 'container'
         ]
         
         result = self.db.executeQuery(

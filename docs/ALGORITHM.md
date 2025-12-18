@@ -48,6 +48,27 @@ These items are **always included** in every container configuration:
 - **Cost**: Uses `unitPrice` from aluminum inventory item
 - **Note**: Quantity in kg equals the calculated weight
 
+### 3. Hydraulic Pump
+- **Quantity**: Always 1 unit
+- **Selection**: Based on `itemModelType` from user input
+  - `"R2DX"` → Select **130cc** pump
+  - `"KSD"`, `"KMD"`, or others → Select **108cc** pump
+- **Weight**: Approximately 50 kg per pump
+- **Query**: Searches `hydraulic_pump` type for pump size in name/code (e.g., "130cc")
+- **Fallback**: If specific size not found, uses any available hydraulic pump
+
+### 4. Hydraulic Oil
+- **Quantity**: Full barrel (180-209L range, using 200L standard)
+- **Weight**: ~200 kg per barrel (176kg oil + 24kg drum)
+  - Oil density: 0.88 kg/L (ISO VG 68)
+  - Oil weight: 200L × 0.88 = ~176 kg
+  - Drum weight: ~15-24 kg
+- **Selection**: Searches for items matching:
+  - Name containing "dầu thủy lực" (hydraulic oil)
+  - Name containing "hydraulic oil"
+  - Type `burning_fuel` with "dầu" (oil) in name
+- **Fallback**: Any available fuel/oil with sufficient quantity (≥200L)
+
 **Aluminum Bar Constants Table:**
 | size_mm | thickness_mm | density_kg_per_m | bars_per_container |
 |---------|--------------|------------------|-------------------|
@@ -66,9 +87,10 @@ These items are **always included** in every container configuration:
 ```python
 variableTypes = [
     'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
-    'galvanized_sheet', 'stainless_steel', 'hydraulic_pump', 'container'
+    'galvanized_sheet', 'stainless_steel', 'container'
 ]
 ```
+**Note**: `hydraulic_pump` and `burning_fuel` (hydraulic oil) are now **fixed items** (always included in BOM), not variable items.
 
 ### Step 1: Separate Items by Weight Contribution
 Items are separated into two categories:
@@ -210,9 +232,11 @@ function optimize(containerLength, itemModelType, slatType, thickness, receiptPr
     walkingFloor = getWalkingFloor(itemModelType)  // 1 set
     aluminumWeight = calculateAluminumWeight(containerLength, slatType, thickness)
     aluminumItem = getAluminumItem(aluminumWeight)
+    hydraulicPump = getHydraulicPump(itemModelType)  // 130cc for R2DX, 108cc for others
+    hydraulicOil = getHydraulicOil()  // 200L barrel (~200kg)
     
-    fixedWeight = walkingFloor.weight + aluminumWeight
-    fixedCost = walkingFloor.cost + aluminumItem.cost
+    fixedWeight = walkingFloor.weight + aluminumWeight + hydraulicPump.weight + hydraulicOil.weight
+    fixedCost = walkingFloor.cost + aluminumItem.cost + hydraulicPump.cost + hydraulicOil.cost
     maxCost = receiptPrice × 0.80  // 20% profit margin
     
     // Phase 2: Variable Items
