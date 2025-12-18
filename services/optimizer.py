@@ -678,15 +678,15 @@ class Optimizer:
         Get hydraulic oil (full barrel 180-209L).
         
         Oil specs:
-        - Volume: 180-209L (using 200L as standard full barrel)
+        - Volume: 180-209L per barrel
         - Density: ~0.88 kg/L (ISO VG 68)
-        - Oil weight: 200L × 0.88 = ~176kg
+        - Oil weight: 209L × 0.88 = ~184kg
         - With drum: ~200kg total
         
         Always includes 1 barrel in the BOM.
+        Database stores oil by barrel (unit='barrel'), not by liter.
         """
-        # Query for hydraulic oil - look for "dầu" (oil) in burning_fuel type
-        # or specifically "hydraulic" / "thủy lực" in the name
+        # Query for hydraulic oil - type is 'hydraulic_oil', unit is 'barrel'
         result = self.db.executeQuery(
             """
             SELECT DISTINCT ON (i.id)
@@ -697,24 +697,17 @@ class Optimizer:
                      ELSE 0 END as unit_price
             FROM items i
             JOIN inventory_records ir ON i.id = ir.item_id
-            WHERE ir.final_quantity >= %s
-              AND (
-                  i.name ILIKE '%%dầu%%thủy lực%%'
-                  OR i.name ILIKE '%%hydraulic%%oil%%'
-                  OR i.name ILIKE '%%dầu%%nhờn%%'
-                  OR (i.type = 'burning_fuel' AND i.name ILIKE '%%dầu%%')
-              )
+            WHERE i.type = 'hydraulic_oil'
+              AND ir.final_quantity >= 1
             ORDER BY i.id, ir.record_date DESC
             LIMIT 1
-            """,
-            (self.HYDRAULIC_OIL_LITERS,),
+            """
         )
 
         if not result:
-            # Fallback: any oil/fuel with sufficient quantity
+            # Fallback: search by name patterns (nhớt, dầu thủy lực, hydraulic oil)
             logger.warning(
-                f"No hydraulic oil ({self.HYDRAULIC_OIL_LITERS}L+) found, "
-                f"trying any oil with sufficient quantity"
+                "No hydraulic_oil type found, trying name-based search"
             )
             result = self.db.executeQuery(
                 """
@@ -726,12 +719,15 @@ class Optimizer:
                          ELSE 0 END as unit_price
                 FROM items i
                 JOIN inventory_records ir ON i.id = ir.item_id
-                WHERE ir.final_quantity >= %s
-                  AND i.type = 'burning_fuel'
+                WHERE ir.final_quantity >= 1
+                  AND (
+                      i.name ILIKE '%%nhớt%%hydraulic%%'
+                      OR i.name ILIKE '%%hydraulic%%oil%%'
+                      OR i.name ILIKE '%%dầu%%thủy lực%%'
+                  )
                 ORDER BY i.id, ir.record_date DESC
                 LIMIT 1
-                """,
-                (self.HYDRAULIC_OIL_LITERS,),
+                """
             )
 
         if not result:
@@ -739,15 +735,15 @@ class Optimizer:
             return None
 
         row = result[0]
-        # Quantity: full barrel in range 180-209L, using 200L
-        quantity = self.HYDRAULIC_OIL_LITERS
-        unitPrice = float(row[6])  # Price per liter
-        # Weight: ~200kg for a full 200L barrel with drum
+        # Quantity: 1 barrel (unit is 'barrel', each barrel is 180-209L)
+        quantity = 1
+        unitPrice = float(row[6])  # Price per barrel
+        # Weight: ~200kg for a full barrel (184kg oil + 16kg drum)
         oilWeight = self.HYDRAULIC_OIL_TOTAL_WEIGHT
 
         logger.info(
             f"🛢️ Selected hydraulic oil: {row[1]} - "
-            f"qty: {quantity}L, weight: {oilWeight}kg"
+            f"qty: {quantity} barrel, weight: {oilWeight}kg, price: {unitPrice:,.0f} VND"
         )
 
         return {
@@ -755,7 +751,7 @@ class Optimizer:
             "code": row[1],
             "name": row[2],
             "unit": row[3],
-            "type": "burning_fuel",
+            "type": "hydraulic_oil",
             "quantity": quantity,
             "unitPrice": unitPrice,
             "totalValue": unitPrice * quantity,
@@ -774,7 +770,7 @@ class Optimizer:
                           Used to validate and filter container items.
         """
         # Include all item types that can be used as variable items
-        # Excludes: walking_floor_*, aluminum, hydraulic_pump, burning_fuel (these are fixed items)
+        # Excludes: walking_floor_*, aluminum, hydraulic_pump, hydraulic_oil (these are fixed items)
         variableTypes = [
             'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
             'galvanized_sheet', 'stainless_steel', 'container'
