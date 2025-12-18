@@ -1,5 +1,12 @@
 # Changelog
 
+## 2025-12-18
+- Added new item type `hydraulic_oil` for lubricants and oils (e.g., Nhớt Hydraulic Oil, Engine Oil).
+- Fixed misclassification: "Hydraulic Oil" now correctly classified as `hydraulic_oil` instead of `hydraulic_pump`.
+- Added unit normalization for Vietnamese "phuy" (drum/barrel) → `can`.
+- Added default unit `can` for `hydraulic_oil` items.
+- Updated `TYPE_RULES` order: `hydraulic_oil` patterns checked before `hydraulic_pump` to prevent false matches.
+
 ## 2025-01-XX
 - Added database wipe functionality before ingestion (MVP snapshot behavior).
 - `Inventory.ingestInventoryFromExcel()` now wipes all existing data before ingesting fresh snapshot.

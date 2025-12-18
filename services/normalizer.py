@@ -57,10 +57,16 @@ class ItemNormalizer:
         (r'trauvien', 'burning_fuel'),
         (r'trấu\s*viên', 'burning_fuel'),
         
-        # Hydraulic equipment
+        # Hydraulic/Engine Oil (must come BEFORE hydraulic_pump to catch "Hydraulic Oil")
+        (r'nh[oớ]t', 'hydraulic_oil'),  # "nhớt" - Vietnamese for lubricant/oil
+        (r'hydraulic.*oil|oil.*hydraulic', 'hydraulic_oil'),
+        (r'engine.*oil|oil.*engine', 'hydraulic_oil'),
+        (r'lubricant', 'hydraulic_oil'),
+        
+        # Hydraulic pumps (specific pump patterns only)
         # Note: "thuỷ" can be spelled as thủy (ủ+y) or thuỷ (u+ỷ)
         (r'b[oơ]m.*th[uủ][yỷ].*l[uự]c', 'hydraulic_pump'),
-        (r'hydraulic', 'hydraulic_pump'),
+        (r'hydraulic.*pump|pump.*hydraulic', 'hydraulic_pump'),
         
         # Controllers
         (r'h[oộ]p.*[đd]i[eề]u.*khi[eể]n', 'controller'),
@@ -104,6 +110,7 @@ class ItemNormalizer:
         'container': 'set',
         'controller': 'set',
         'hydraulic_pump': 'pcs',
+        'hydraulic_oil': 'can',
     }
 
     # Unit normalization map (handles typos too)
@@ -129,6 +136,10 @@ class ItemNormalizer:
         'met': 'm',
         'meter': 'm',
         'm': 'm',
+        'phuy': 'can',  # Vietnamese for drum/barrel/can
+        'can': 'can',
+        'thùng': 'can',
+        'thung': 'can',
     }
 
     @classmethod
@@ -268,6 +279,11 @@ def main():
         ("DAU", "Dầu DO", "Lít"),  # Should be burning_fuel!
         ("THAN", "Than", "kg"),
         ("trauvien", "Trấu viên", "kg"),
+        
+        # Hydraulic oil (should NOT be hydraulic_pump!)
+        ("Nhớt Hydraulic Oil 68 (BP) - 209L", "Nhớt Hydraulic Oil 68 (BP) - 209L", "Phuy"),
+        ("Engine Oil 10W40", "Engine Oil 10W40", "can"),
+        ("Lubricant SAE 30", "Lubricant SAE 30", None),  # Should get default 'can'
         
         # Equipment (should NOT be 'other')
         ("Bơm thuỷ lực", "Bơm thuỷ lực", "Cái"),

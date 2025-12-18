@@ -292,19 +292,22 @@ class NormalizedItem:
 2. **Burning Fuels**:
    - `burning_fuel`: Matches `badieu`, `bã điều`, `dau`, `dầu do`, `than`, `trauvien`, `trấu viên`
 
-3. **Hydraulic Equipment**:
-   - `hydraulic_pump`: Matches `bơm.*thuỷ.*lực`, `hydraulic`
+3. **Hydraulic/Engine Oil** (checked before hydraulic_pump):
+   - `hydraulic_oil`: Matches `nhớt`, `hydraulic.*oil`, `engine.*oil`, `lubricant`
 
-4. **Controllers**:
+4. **Hydraulic Equipment**:
+   - `hydraulic_pump`: Matches `bơm.*thuỷ.*lực`, `hydraulic.*pump`
+
+5. **Controllers**:
    - `controller`: Matches `hộp.*điều.*khiển`, `controller`
 
-5. **Walking Floor Generic**:
+6. **Walking Floor Generic**:
    - `walking_floor`: Matches `sàn.*di.*động`, `walking.*floor`, `keith`
 
-6. **Aluminum**:
+7. **Aluminum**:
    - `aluminum`: Matches `nhôm`, `aluminum`, `aluminium`
 
-7. **Steel Types** (specific before general):
+8. **Steel Types** (specific before general):
    - `stainless_steel`: Matches `thép.*không.*gỉ`, `stainless`
    - `steel_box`: Matches `thép.*hộp`, `thep.*hop`
    - `steel_pipe`: Matches `thép.*ống`, `thep.*ong`
@@ -314,13 +317,13 @@ class NormalizedItem:
    - `steel_i`: Matches `thép.*i\d`, `thepi`
    - `steel`: Matches `thep`, `thép` (fallback)
 
-8. **Galvanized Sheet**:
+9. **Galvanized Sheet**:
    - `galvanized_sheet`: Matches `tôn.*mạ.*kẽm`, `galvanized`
 
-9. **Containers**:
-   - `container`: Matches `vỏ.*container`, `container`
+10. **Containers**:
+    - `container`: Matches `vỏ.*container`, `container`
 
-10. **Other**:
+11. **Other**:
     - `other`: Default fallback for unclassified items
 
 **Pattern Matching Notes**:
@@ -697,6 +700,7 @@ Row 6+: [Data Rows]
 | Type | Description | Examples | Default Unit |
 |------|-------------|----------|--------------|
 | `burning_fuel` | Fuel for burning/energy | Bã điều, Dầu DO, Than, Trấu viên | None |
+| `hydraulic_oil` | Lubricants and oils | Nhớt Hydraulic Oil, Engine Oil, Lubricant | `can` |
 | `hydraulic_pump` | Hydraulic pumps | Bơm thuỷ lực | `pcs` |
 | `controller` | Control boxes | hộp điều khiển chế tạo | `set` |
 | `walking_floor_ksd` | Keith Walking Floor KSD series | KSD 4.25, Sàn di động KSD | `set` |
@@ -737,6 +741,7 @@ Units are normalized to standard formats:
 | `cái`, `cai`, `chiếc`, `chiec`, `pcs`, `piece` | `pcs` | Piece counts |
 | `bộ`, `bo`, `set` | `set` | Sets/assemblies |
 | `mét`, `met`, `meter`, `m` | `m` | Length measurements |
+| `phuy`, `thùng`, `thung`, `can` | `can` | Drums/barrels/cans (for oils) |
 
 ---
 
