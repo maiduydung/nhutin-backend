@@ -14,7 +14,7 @@ env:
   AZURE_FUNCTIONAPP_NAME: "nhutin-bom-prod"
   AZURE_FUNCTIONAPP_PACKAGE_PATH: "."
   PYTHON_VERSION: "3.11"
-  EXPECTED_FUNCTION_NAME: "Nhu Tin Bill of Materials"
+  EXPECTED_FUNCTION_NAME: "health"
 
 jobs:
   deploy:
@@ -85,7 +85,7 @@ jobs:
             RESPONSE=$(curl -s "$HEALTH_URL" || echo '{"function":"CURL_FAILED"}')
             echo "Response: $RESPONSE"
 
-            FUNCTION_NAME=$(echo "$RESPONSE" | jq -r '.function // "UNKNOWN"')
+            FUNCTION_NAME=$(echo "$RESPONSE" | jq -r '.functionName // "UNKNOWN"')
             echo "Function name in response: $FUNCTION_NAME"
 
             if [[ "$FUNCTION_NAME" == "${{ env.EXPECTED_FUNCTION_NAME }}" ]]; then
