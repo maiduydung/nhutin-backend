@@ -46,6 +46,43 @@ class Optimizer:
         """
         return CONTAINER_EMPTY_WEIGHTS.get(containerType, 0)
     
+    def _getPrebuiltContainerItem(
+        self, 
+        containerType: str, 
+        containerSize: str, 
+        variableItems: list[dict]
+    ) -> dict | None:
+        """
+        Find and return the pre-built container item from inventory.
+        
+        Args:
+            containerType: e.g., "container_20ft" or "container_40ft"
+            containerSize: e.g., "20ft" or "40ft"
+            variableItems: List of variable items from inventory
+        
+        Returns:
+            Container item dict with weight, or None if not found
+        """
+        sizeInName = "40" if containerSize == "40ft" else "20"
+        containerWeight = self._getPrebuiltContainerWeight(containerType)
+        
+        for item in variableItems:
+            if item["type"] == "container" and sizeInName in item["name"]:
+                return {
+                    "id": item["id"],
+                    "code": item["code"],
+                    "name": item["name"],
+                    "unit": item["unit"],
+                    "type": "container",
+                    "quantity": 1,
+                    "unitPrice": item["unitPrice"],
+                    "totalValue": item["unitPrice"],
+                    "weight": containerWeight,  # Actual container weight!
+                }
+        
+        logger.warning(f"Pre-built {containerSize} container not found in variableItems")
+        return None
+    
     def _getEffectiveMaxWeight(
         self, 
         containerType: str, 
@@ -167,11 +204,25 @@ class Optimizer:
             fixedWeight += hydraulicOilItem["weight"]
             fixedCost += hydraulicOilItem["totalValue"]
 
-        # If building container, BUILD IT FIRST to reserve materials
+        # Handle container: either use pre-built or build from materials
         builtContainerItems = []
         containerBuildCost = 0.0
         containerBuildWeight = 0.0
+        prebuiltContainerItem = None
         
+        # If using pre-built container, find and add it to BOM
+        if usingPrebuiltContainer and not needToBuild:
+            prebuiltContainerItem = self._getPrebuiltContainerItem(
+                containerType, containerSize, variableItems
+            )
+            if prebuiltContainerItem:
+                logger.info(
+                    f"✅ Added pre-built {containerSize} container to BOM: "
+                    f"weight={prebuiltContainerItem['weight']}kg, "
+                    f"cost={prebuiltContainerItem['totalValue']:,.0f}"
+                )
+        
+        # If building container, BUILD IT to reserve materials
         if needToBuild:
             maxCost = receiptPrice * (1 - self.MAX_PROFIT_MARGIN)
             
@@ -223,6 +274,9 @@ class Optimizer:
             allItems.append(hydraulicPumpItem)
         if hydraulicOilItem:
             allItems.append(hydraulicOilItem)
+        # Add pre-built container item if using one
+        if prebuiltContainerItem:
+            allItems.append(prebuiltContainerItem)
         allItems.extend(selectedItems)
         allItems.extend(builtContainerItems)
 
