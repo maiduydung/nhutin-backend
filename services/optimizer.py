@@ -2,7 +2,12 @@ from typing import Any
 from services.database import Database
 from services.weight_calculator import WeightCalculator
 from services.container_builder import ContainerBuilder
-from config import logger
+from config import (
+    logger,
+    CONTAINER_TYPES_WITH_CONTAINER,
+    CONTAINER_TYPES_WITHOUT_CONTAINER,
+    CONTAINER_EMPTY_WEIGHTS,
+)
 
 
 class Optimizer:
@@ -18,6 +23,45 @@ class Optimizer:
         self.db = db
         self.weightCalculator = WeightCalculator()
         self.containerBuilder = ContainerBuilder(db)
+    
+    # =========================================================================
+    # Container Type Helper Methods
+    # =========================================================================
+    
+    def _shouldIncludeContainerItem(self, containerType: str) -> bool:
+        """
+        Check if container type should include a container item in BOM.
+        
+        - container_20ft, container_40ft: YES (pre-built or built from materials)
+        - mooc_long, thung_xe_tai: NO (structure materials only, no container)
+        """
+        return containerType in CONTAINER_TYPES_WITH_CONTAINER
+    
+    def _getPrebuiltContainerWeight(self, containerType: str) -> int:
+        """
+        Get the empty weight of a pre-built container.
+        
+        Returns:
+            Weight in kg (1900 for 20ft, 2500 for 40ft, 0 for others)
+        """
+        return CONTAINER_EMPTY_WEIGHTS.get(containerType, 0)
+    
+    def _getEffectiveMaxWeight(
+        self, 
+        containerType: str, 
+        usingPrebuiltContainer: bool
+    ) -> int:
+        """
+        Calculate effective max weight based on container type and usage.
+        
+        - Pre-built container: MAX_WEIGHT - container empty weight
+        - Built from materials: MAX_WEIGHT (materials already counted)
+        - mooc_long/thung_xe_tai: MAX_WEIGHT (no container)
+        """
+        if usingPrebuiltContainer and containerType in CONTAINER_EMPTY_WEIGHTS:
+            containerWeight = CONTAINER_EMPTY_WEIGHTS[containerType]
+            return self.MAX_WEIGHT - containerWeight
+        return self.MAX_WEIGHT
 
     # Hydraulic pump selection by model type
     HYDRAULIC_PUMP_MAP = {
@@ -50,7 +94,7 @@ class Optimizer:
             f"🔧 Optimization constraints: "
             f"baseMaxWeight={self.BASE_MAX_WEIGHT}kg, "
             f"materialLossFactor={self.MATERIAL_LOSS_FACTOR * 100:.0f}%, "
-            f"effectiveMaxWeight={self.MAX_WEIGHT}kg, "
+            f"nominalMaxWeight={self.MAX_WEIGHT}kg, "
             f"maxProfitMargin={self.MAX_PROFIT_MARGIN * 100:.0f}%"
         )
         logger.info(
@@ -75,11 +119,19 @@ class Optimizer:
         hydraulicOilItem = self._getHydraulicOilItem()
         
         # Get variable items for optimization (with container validation)
+        # Pass containerType to exclude container items for mooc_long/thung_xe_tai
         variableItems = self._getVariableItems(containerType)
 
         # Check if we need to build a container from materials
-        needToBuild, containerSize = self._checkNeedToBuildContainer(
+        needToBuild, containerSize, usingPrebuiltContainer = self._checkNeedToBuildContainer(
             containerType, variableItems
+        )
+        
+        # Calculate effective max weight based on container usage
+        effectiveMaxWeight = self._getEffectiveMaxWeight(containerType, usingPrebuiltContainer)
+        logger.info(
+            f"📦 Container: type={containerType}, needToBuild={needToBuild}, "
+            f"prebuilt={usingPrebuiltContainer}, effectiveMaxWeight={effectiveMaxWeight}kg"
         )
 
         # Calculate aluminum bars (skip if building container - aluminum will be part of build)
@@ -128,7 +180,7 @@ class Optimizer:
                 maxCost=maxCost,
                 currentCost=fixedCost,  # Only walking floor cost
                 currentWeight=fixedWeight,  # Only walking floor weight
-                maxWeight=self.MAX_WEIGHT,
+                maxWeight=effectiveMaxWeight,  # Use effective max weight
             )
             
             if buildResult["success"]:
@@ -159,7 +211,8 @@ class Optimizer:
         selectedItems = self._optimizeVariableItems(
             variableItems, effectiveFixedWeight, effectiveFixedCost, receiptPrice, 
             skipContainerBuild=needToBuild,
-            containerBuildItemIds=containerBuildItemIds
+            containerBuildItemIds=containerBuildItemIds,
+            effectiveMaxWeight=effectiveMaxWeight,
         )
 
         # Combine fixed and variable items (and built container materials if any)
@@ -257,10 +310,15 @@ class Optimizer:
                 "baseMaxWeight": self.BASE_MAX_WEIGHT,
                 "materialLossFactor": self.MATERIAL_LOSS_FACTOR,
                 "materialLossPercent": round(self.MATERIAL_LOSS_FACTOR * 100, 1),
-                "effectiveMaxWeight": self.MAX_WEIGHT,
+                "nominalMaxWeight": self.MAX_WEIGHT,
+                "effectiveMaxWeight": effectiveMaxWeight,
                 "maxProfitMargin": self.MAX_PROFIT_MARGIN,
                 "maxProfitMarginPercent": round(self.MAX_PROFIT_MARGIN * 100, 1),
                 "minWeight": self.MIN_WEIGHT,
+                # Container-specific info
+                "containerType": containerType,
+                "usingPrebuiltContainer": usingPrebuiltContainer,
+                "prebuiltContainerWeight": self._getPrebuiltContainerWeight(containerType) if usingPrebuiltContainer else 0,
             },
             "estimatedUsableWeight": estimatedUsableWeight,
         }
@@ -766,15 +824,26 @@ class Optimizer:
         This allows the optimizer to use whatever inventory is available.
         
         Args:
-            containerType: Optional container type (e.g., "container_40ft", "container_20ft")
-                          Used to validate and filter container items.
+            containerType: Container type (e.g., "container_40ft", "mooc_long")
+                          Used to filter container items.
+                          - container_20ft/40ft: Include container items
+                          - mooc_long/thung_xe_tai: Exclude container items
         """
         # Include all item types that can be used as variable items
         # Excludes: walking_floor_*, aluminum, hydraulic_pump, hydraulic_oil (these are fixed items)
         variableTypes = [
             'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
-            'galvanized_sheet', 'stainless_steel', 'container'
+            'galvanized_sheet', 'stainless_steel',
         ]
+        
+        # Only include container items for container_20ft and container_40ft
+        # mooc_long and thung_xe_tai do NOT include container items
+        if self._shouldIncludeContainerItem(containerType):
+            variableTypes.append('container')
+        else:
+            logger.info(
+                f"Excluding container items from variable items for '{containerType}'"
+            )
         
         result = self.db.executeQuery(
             """
@@ -883,37 +952,54 @@ class Optimizer:
         self,
         containerType: str,
         variableItems: list[dict[str, Any]],
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, bool]:
         """
         Check if we need to build a container from materials.
         
+        Container Types:
+        - container_20ft/40ft: Check inventory, build if not available
+        - mooc_long/thung_xe_tai: Always build structure (no container item)
+        
         Returns:
-            (needToBuild, containerSize) - True if no container available, with size
+            (needToBuild, containerSize, usingPrebuiltContainer)
+            - needToBuild: True if need to build structure from materials
+            - containerSize: "20ft", "40ft", or "" for scaling reference
+            - usingPrebuiltContainer: True if using pre-built container from inventory
         """
-        # Parse container size from type
+        # For mooc_long and thung_xe_tai: always build structure, never use container
+        if containerType in CONTAINER_TYPES_WITHOUT_CONTAINER:
+            logger.info(
+                f"Container type '{containerType}' does not include container item. "
+                f"Building structure from materials only."
+            )
+            # Use 40ft as scaling base for material calculation
+            return True, "40ft", False
+        
+        # For container_20ft and container_40ft: check inventory
         containerSize = None
-        if containerType:
-            if "40" in containerType:
-                containerSize = "40ft"
-            elif "20" in containerType:
-                containerSize = "20ft"
+        if containerType == "container_40ft":
+            containerSize = "40ft"
+        elif containerType == "container_20ft":
+            containerSize = "20ft"
         
         if not containerSize:
-            return False, ""
+            logger.warning(f"Unknown container type: {containerType}")
+            return False, "", False
         
-        # Check if requested container is available
+        # Check if requested container is available in inventory
         for item in variableItems:
             if item["type"] == "container":
                 sizeInName = "40" if containerSize == "40ft" else "20"
                 if sizeInName in item["name"]:
-                    return False, containerSize  # Container available
+                    logger.info(f"Found pre-built {containerSize} container in inventory")
+                    return False, containerSize, True  # Pre-built container available
         
-        # No matching container found
+        # No matching container found - need to build from materials
         logger.warning(
             f"No {containerSize} container in inventory. "
-            f"Will attempt to build from materials."
+            f"Will build from materials."
         )
-        return True, containerSize
+        return True, containerSize, False
 
     def _optimizeVariableItems(
         self,
@@ -923,18 +1009,23 @@ class Optimizer:
         receiptPrice: float,
         skipContainerBuild: bool = False,
         containerBuildItemIds: set[int] = None,
+        effectiveMaxWeight: int = None,
     ) -> list[dict[str, Any]]:
         """
-        Greedy optimization: aggressively fill weight range to MAX_WEIGHT.
+        Greedy optimization: aggressively fill weight range to effective max weight.
         Maximizes variety by selecting from different types.
         Respects profit margin constraint.
         
         Args:
             skipContainerBuild: If True, don't add containers (we'll build from materials)
             containerBuildItemIds: Set of item IDs already used for container building (to avoid duplicates)
+            effectiveMaxWeight: Max weight considering container type and pre-built usage
         """
+        # Use effective max weight if provided, otherwise default to MAX_WEIGHT
+        maxWeight = effectiveMaxWeight if effectiveMaxWeight else self.MAX_WEIGHT
+        
         # Target maximum weight (be greedy!)
-        targetWeight = self.MAX_WEIGHT - fixedWeight
+        targetWeight = maxWeight - fixedWeight
         remainingWeight = targetWeight
         selectedItems = []
         usedTypes = set()
@@ -1011,7 +1102,7 @@ class Optimizer:
 
             # Calculate max quantity - be greedy! Take ALL available if budget allows
             currentTotalWeight = fixedWeight + sum(i["weight"] for i in selectedItems)
-            weightSpaceLeft = self.MAX_WEIGHT - currentTotalWeight
+            weightSpaceLeft = maxWeight - currentTotalWeight
             
             maxWeightQuantity = int(weightSpaceLeft / weightPerUnit) if weightPerUnit > 0 else item["availableQuantity"]
             maxBudgetQuantity = int((maxCost - currentCost) / item["unitPrice"]) if item["unitPrice"] > 0 else item["availableQuantity"]
@@ -1142,7 +1233,7 @@ class Optimizer:
             
             for ratio, item in itemsWithRatio:
                 # Stop if we've reached max weight or budget
-                if currentTotalWeight >= self.MAX_WEIGHT or currentCost >= maxCost:
+                if currentTotalWeight >= maxWeight or currentCost >= maxCost:
                     break
                 
                 # Check if we've already selected this item
@@ -1167,7 +1258,7 @@ class Optimizer:
                     continue
 
                 # Calculate how much weight we still need
-                weightNeeded = self.MAX_WEIGHT - currentTotalWeight
+                weightNeeded = maxWeight - currentTotalWeight
                 
                 # Calculate max quantity - be greedy! Fill to MAX_WEIGHT
                 maxWeightQuantity = int(weightNeeded / weightPerUnit) if weightPerUnit > 0 else remainingAvailable

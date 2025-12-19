@@ -168,7 +168,7 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "containerType": "container_20ft",      // or "container_40ft", etc.
+  "containerType": "container_20ft",      // See Container Types below
   "containerLength": 6.096,              // Length in meters (e.g., 6.096 for 20ft container)
   "itemModelType": "R2DX",               // Walking floor model: "R2DX", "KSD", or "KMD"
   "slatType": "97mm",                    // Slat specification: "97mm" or "112mm"
@@ -176,6 +176,19 @@ Content-Type: application/json
   "receiptPrice": 600000000              // Receipt price in VND
 }
 ```
+
+**Supported Container Types:**
+
+| Container Type | Default Length | Container in BOM | Container Weight | Effective Max Materials |
+|----------------|---------------|------------------|------------------|------------------------|
+| `container_20ft` | 6.096 m | ✅ Yes | 1,900 kg (if pre-built) | 4,820 - 6,720 kg |
+| `container_40ft` | 12.192 m | ✅ Yes | 2,500 kg (if pre-built) | 4,220 - 6,720 kg |
+| `mooc_long` | 15.0 m | ❌ No | N/A | 6,720 kg |
+| `thung_xe_tai` | 15.0 m | ❌ No | N/A | 6,720 kg |
+
+**Container Type Behavior:**
+- **Container 20ft/40ft**: Include container item in BOM. If pre-built container unavailable, builds from materials. Pre-built container weight is subtracted from effective max.
+- **Mooc Long/Thung Xe Tai**: Never include container item. Always build structure from raw materials (steel frame, galvanized sheets, aluminum). Full 6,720 kg available for materials.
 
 **Response:**
 ```json

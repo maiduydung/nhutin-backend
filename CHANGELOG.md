@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2025-12-19
+
+### Added
+
+#### Container Type Differentiation
+- **New Feature**: Full support for 4 distinct container types with different BOM handling:
+  - `Container 20ft` - Standard 20-foot container
+  - `Container 40ft` - Standard 40-foot container
+  - `Mooc Long` - Long trailer (default 15m length)
+  - `Thung Xe Tai` - Truck body (default 15m, user-inputtable)
+
+#### Container Empty Weight Handling
+- **Pre-built container weights** now subtracted from Effective Max Weight:
+  - Container 20ft: 1,900 kg empty weight → Effective Max: 4,820 kg for materials
+  - Container 40ft: 2,500 kg empty weight → Effective Max: 4,220 kg for materials
+- For Mooc Long and Thung Xe Tai: No pre-built container → Effective Max remains 6,720 kg
+
+#### New Helper Methods (`services/optimizer.py`)
+- `_shouldIncludeContainerItem()` - Determines if container item should be in BOM
+- `_getPrebuiltContainerWeight()` - Returns empty weight for pre-built containers
+- `_getEffectiveMaxWeight()` - Calculates effective max weight based on container type
+
+#### Configuration Constants (`config.py`)
+- `CONTAINER_TYPES_WITH_CONTAINER` - Types that include container in BOM
+- `CONTAINER_TYPES_WITHOUT_CONTAINER` - Types that never include container
+- `CONTAINER_EMPTY_WEIGHTS` - Empty weights for pre-built containers
+- `CONTAINER_DEFAULT_LENGTHS` - Default lengths for each container type
+
+#### Comprehensive Test Suite
+- Added `tests/test_container_type_logic.py` with 41 new test cases covering:
+  - Container type constant validation
+  - Container type recognition and parsing
+  - Container item inclusion/exclusion logic
+  - Weight constraint calculations
+  - Material scaling based on length
+  - Fixed items presence verification
+
+### Changed
+
+#### Container Item Exclusion for Mooc Long & Thung Xe Tai
+- **Breaking Change**: Container items (e.g., "Vỏ container 20 feet") are now **NEVER** included in BOM for:
+  - `mooc_long` - Builds structure from raw materials only
+  - `thung_xe_tai` - Builds structure from raw materials only
+- Materials (steel frame, galvanized sheets, aluminum) are still included to build the structure
+
+#### Material Scaling Formula
+- Steel and galvanized sheets now scale proportionally based on container length:
+  - Steel frame: `983 kg × (containerLength / 12.192m)`
+  - Galvanized sheet: `100 m × (containerLength / 12.192m)`
+- Uses 40ft container (12.192m) as baseline
+- Example: 15m Mooc Long → Steel: ~1,209 kg, Sheets: ~123 m
+
+#### UserInput Model (`models/user_input.py`)
+- Updated `containerType` to accept new literal values from UI:
+  - `"container_20ft"`, `"container_40ft"`, `"mooc_long"`, `"thung_xe_tai"`
+
+#### Optimizer Response
+- Now includes `effectiveMaxWeight` in response
+- Now includes `prebuiltContainerWeight` for transparency
+
+### Weight Constraint Summary
+
+| Container Type | Pre-built Container in BOM | Container Weight | Effective Max Materials |
+|----------------|---------------------------|------------------|------------------------|
+| Container 20ft (pre-built) | ✅ Yes | 1,900 kg | 4,820 kg |
+| Container 20ft (built) | ✅ Yes | 0 kg | 6,720 kg |
+| Container 40ft (pre-built) | ✅ Yes | 2,500 kg | 4,220 kg |
+| Container 40ft (built) | ✅ Yes | 0 kg | 6,720 kg |
+| Mooc Long | ❌ No | 0 kg | 6,720 kg |
+| Thung Xe Tai | ❌ No | 0 kg | 6,720 kg |
+
+### Documentation
+- Updated `docs/ALGORITHM.md` with container type handling section
+- Updated `README.md` with 4 container types and weight constraints
+- Updated `CHANGELOG.md` (this entry)
+
+### Tests Updated
+- `tests/test_optimizer_container_build.py` - Updated for new return signature
+- `tests/test_container_builder.py` - Fixed mock setup for new parameters
+
+---
+
 ## [1.5.0] - 2025-12-12
 
 ### Changed

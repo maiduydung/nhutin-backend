@@ -14,9 +14,14 @@ This is a **Constrained Multiple Knapsack Problem** variant with the following c
    - Base limit: 6000 kg
    - Material loss factor: 12% (allows extra weight to compensate for processing losses)
    - Effective max weight: 6000 × 1.12 ≈ 6720 kg
+   - **Container-adjusted**: For pre-built containers, effective max is reduced by container empty weight:
+     - Container 20ft (pre-built): 6720 - 1900 = **4820 kg** for materials
+     - Container 40ft (pre-built): 6720 - 2500 = **4220 kg** for materials
+     - Mooc Long / Thung Xe Tai: Full **6720 kg** (no pre-built container)
 2. **Budget Constraint**: Total cost ≤ 80% of receipt price (profit margin ≤ 20%)
 3. **Variety Constraint**: Must use multiple item types (never select only one type)
 4. **Availability Constraint**: Cannot exceed `final_quantity` from inventory records
+5. **Container Type Constraint**: Mooc Long and Thung Xe Tai never include container items in BOM
 
 ## Algorithm Overview
 
@@ -91,6 +96,8 @@ variableTypes = [
 ]
 ```
 **Note**: `hydraulic_pump` and `burning_fuel` (hydraulic oil) are now **fixed items** (always included in BOM), not variable items.
+
+**Container Type Filtering**: The `container` type is automatically filtered out for `mooc_long` and `thung_xe_tai` container types. These types only use raw materials (steel, galvanized sheets, aluminum) to build the structure - they never include a pre-built container item.
 
 ### Step 1: Separate Items by Weight Contribution
 Items are separated into two categories:
@@ -391,6 +398,90 @@ if requestedContainer not in database:
 - Request: `container_40ft` (not in DB)
 - Error logged: "Requested 40ft container not found. Available: ['20ft']"
 - Fallback: Uses "Vỏ container 20 feet đã qua sử dụng"
+
+## Container Type Handling
+
+The system supports 4 distinct container types with different BOM (Bill of Materials) behavior:
+
+### Supported Container Types
+
+| Container Type | Internal Value | Default Length | Container in BOM | Pre-built Weight |
+|----------------|---------------|----------------|------------------|------------------|
+| Container 20ft | `container_20ft` | 6.096 m | ✅ Yes | 1,900 kg |
+| Container 40ft | `container_40ft` | 12.192 m | ✅ Yes | 2,500 kg |
+| Mooc Long | `mooc_long` | 15.0 m | ❌ No | N/A |
+| Thung Xe Tai | `thung_xe_tai` | 15.0 m | ❌ No | N/A |
+
+### Container Item Inclusion Logic
+
+```python
+def _shouldIncludeContainerItem(containerType: str) -> bool:
+    """
+    Container 20ft/40ft: Include container item (pre-built or built from materials)
+    Mooc Long/Thung Xe Tai: NEVER include container item - only build structure
+    """
+    return containerType in ["container_20ft", "container_40ft"]
+```
+
+### Effective Max Weight Calculation
+
+The system calculates effective maximum weight for materials based on container type:
+
+```python
+def _getEffectiveMaxWeight(containerType: str, containerBuiltFromMaterials: bool) -> float:
+    """
+    MAX_WEIGHT = 6720 kg (base 6000 kg + 12% material loss factor)
+    
+    For pre-built containers (20ft/40ft):
+        effectiveMax = MAX_WEIGHT - containerEmptyWeight
+        - 20ft: 6720 - 1900 = 4820 kg
+        - 40ft: 6720 - 2500 = 4220 kg
+    
+    For built containers or mooc_long/thung_xe_tai:
+        effectiveMax = MAX_WEIGHT = 6720 kg (full capacity for materials)
+    """
+    if containerType in CONTAINER_TYPES_WITH_CONTAINER and not containerBuiltFromMaterials:
+        return MAX_WEIGHT - CONTAINER_EMPTY_WEIGHTS[containerType]
+    return MAX_WEIGHT
+```
+
+### Weight Constraint Summary
+
+| Scenario | Container Weight | Effective Max Materials |
+|----------|-----------------|------------------------|
+| Container 20ft (pre-built) | 1,900 kg | 4,820 kg |
+| Container 20ft (built from materials) | 0 kg | 6,720 kg |
+| Container 40ft (pre-built) | 2,500 kg | 4,220 kg |
+| Container 40ft (built from materials) | 0 kg | 6,720 kg |
+| Mooc Long | 0 kg | 6,720 kg |
+| Thung Xe Tai | 0 kg | 6,720 kg |
+
+### Material Scaling for Mooc Long / Thung Xe Tai
+
+For non-container types (mooc_long, thung_xe_tai), materials scale proportionally based on length using the 40ft container specs as baseline:
+
+```python
+BASELINE_LENGTH = 12.192  # 40ft container in meters
+
+def getScaledMaterials(containerLength: float) -> dict:
+    scaleFactor = containerLength / BASELINE_LENGTH
+    return {
+        "steel_frame_kg": 983 * scaleFactor,      # Base: 983 kg for 40ft
+        "galvanized_sheet_m": 100 * scaleFactor,  # Base: 100 m for 40ft
+    }
+
+# Example: 15m Mooc Long
+# scaleFactor = 15.0 / 12.192 = 1.23
+# steel_frame_kg = 983 × 1.23 ≈ 1,209 kg
+# galvanized_sheet_m = 100 × 1.23 ≈ 123 m
+```
+
+**Aluminum bars** are calculated dynamically from the `aluminum_bar_constants` table:
+```python
+aluminum_weight = containerLength × density_kg_per_m × bars_per_container
+```
+
+---
 
 ## Container Building from Materials
 

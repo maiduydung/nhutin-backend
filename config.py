@@ -166,3 +166,39 @@ MATERIAL_SUBSTITUTES = {
         "conversion_ratio": 1.0,
     },
 }
+
+# =============================================================================
+# Container Type Configuration
+# =============================================================================
+
+# Container types that include a container item (pre-built or built from materials)
+CONTAINER_TYPES_WITH_CONTAINER = ["container_20ft", "container_40ft"]
+
+# Container types that do NOT include container item (structure only)
+CONTAINER_TYPES_WITHOUT_CONTAINER = ["mooc_long", "thung_xe_tai"]
+
+# All valid container types
+ALL_CONTAINER_TYPES = CONTAINER_TYPES_WITH_CONTAINER + CONTAINER_TYPES_WITHOUT_CONTAINER
+
+# Empty weight of pre-built containers (kg)
+# Only applies when using pre-built container from inventory
+CONTAINER_EMPTY_WEIGHTS = {
+    "container_20ft": 1900,  # kg
+    "container_40ft": 2500,  # kg
+    # mooc_long and thung_xe_tai don't have container, so no weight
+}
+
+# Default container lengths (meters)
+CONTAINER_DEFAULT_LENGTHS = {
+    "container_20ft": 6.096,
+    "container_40ft": 12.192,
+    "mooc_long": 15.0,
+    "thung_xe_tai": 15.0,
+}
+
+# Base reference for material scaling (40ft container)
+MATERIAL_SCALING_BASE = {
+    "length_m": 12.192,  # 40ft in meters
+    "steel_frame_kg": 983,  # kg
+    "galvanized_sheet_m": 100,  # meters
+}

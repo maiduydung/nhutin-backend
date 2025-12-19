@@ -18,6 +18,8 @@ class TestContainerBuilder(unittest.TestCase):
         """Set up test fixtures."""
         self.mockDb = MagicMock()
         self.builder = ContainerBuilder(self.mockDb)
+        # Set default slat params for aluminum calculation
+        self.builder.setSlatParams("112mm", 6, 12.192)
 
     def test_container_specs_exist(self):
         """Test that container specs are defined in config."""
@@ -53,10 +55,43 @@ class TestContainerBuilder(unittest.TestCase):
         self.assertFalse(result["canBuild"])
         self.assertIn("reason", result)
 
+    def _setupMockForBuildCheck(self, steelQty=1000, sheetQty=100, alumQty=1000):
+        """Helper to setup comprehensive mock for build checks."""
+        steelResult = [
+            (1, "steel_box_1", "Thép hộp", "kg", "steel_box", float(steelQty), 20000.0),
+        ]
+        sheetResult = [
+            (2, "galv_sheet_1", "Tôn mạ kẽm 0.95 x 1200", "m", "galvanized_sheet", float(sheetQty), 100000.0),
+        ]
+        alumResult = [
+            (3, "nhom_thanh", "Nhôm thanh", "kg", "aluminum", float(alumQty), 120000.0),
+        ]
+        # Aluminum bar constants for weight calculation
+        alumConstantsResult = [(2.529, 21)]
+        
+        def mockQuery(query, params=None):
+            queryLower = query.lower()
+            if "aluminum_bar_constants" in queryLower:
+                return alumConstantsResult
+            elif "steel" in queryLower and "any" in queryLower:
+                return steelResult
+            elif "galvanized" in queryLower:
+                return sheetResult
+            elif "aluminum" in queryLower:
+                return alumResult
+            return []
+        
+        self.mockDb.executeQuery.side_effect = mockQuery
+
     def test_can_build_container_no_materials(self):
         """Test canBuildContainer when no materials available."""
-        # Mock empty inventory
-        self.mockDb.executeQuery.return_value = []
+        # Mock empty inventory but return aluminum constants
+        def mockQuery(query, params=None):
+            if "aluminum_bar_constants" in query.lower():
+                return [(2.529, 21)]  # Return valid constants
+            return []
+        
+        self.mockDb.executeQuery.side_effect = mockQuery
         
         result = self.builder.canBuildContainer("20ft")
         self.assertFalse(result["canBuild"])
@@ -64,33 +99,10 @@ class TestContainerBuilder(unittest.TestCase):
 
     def test_can_build_container_with_materials(self):
         """Test canBuildContainer when materials are available."""
-        # Mock steel query result
-        steelResult = [
-            (1, "steel_box_1", "Thép hộp", "kg", "steel_box", 1000.0, 20000.0),
-        ]
-        # Mock galvanized sheet query result
-        sheetResult = [
-            (2, "galv_sheet_1", "Tôn mạ kẽm 0.95 x 1200", "m", "galvanized_sheet", 100.0, 100000.0),
-        ]
-        # Mock aluminum query result
-        alumResult = [
-            (3, "nhom_thanh", "Nhôm thanh", "kg", "aluminum", 500.0, 120000.0),
-        ]
-        
-        # Setup mock to return different results for different queries
-        def mockQuery(query, params=None):
-            if "steel" in query.lower():
-                return steelResult
-            elif "galvanized" in query.lower():
-                return sheetResult
-            elif "aluminum" in query.lower():
-                return alumResult
-            return []
-        
-        self.mockDb.executeQuery.side_effect = mockQuery
+        self._setupMockForBuildCheck(steelQty=1000, sheetQty=100, alumQty=1000)
         
         result = self.builder.canBuildContainer("20ft")
-        # May or may not build depending on quantities
+        # Should be able to build with sufficient materials
         self.assertIn("canBuild", result)
         self.assertIn("materials", result)
         self.assertIn("totalCost", result)
@@ -98,11 +110,7 @@ class TestContainerBuilder(unittest.TestCase):
 
     def test_build_container_budget_constraint(self):
         """Test buildContainer respects budget constraint."""
-        # Setup mock with expensive materials
-        def mockQuery(query, params=None):
-            return [(1, "test", "Test Item", "kg", "steel_box", 1000.0, 1000000.0)]
-        
-        self.mockDb.executeQuery.side_effect = mockQuery
+        self._setupMockForBuildCheck(steelQty=1000, sheetQty=100, alumQty=1000)
         
         result = self.builder.buildContainer(
             containerSize="20ft",
@@ -117,18 +125,14 @@ class TestContainerBuilder(unittest.TestCase):
 
     def test_build_container_weight_constraint(self):
         """Test buildContainer respects weight constraint."""
-        # Setup mock with heavy materials
-        def mockQuery(query, params=None):
-            return [(1, "test", "Test Item", "kg", "steel_box", 5000.0, 10000.0)]
-        
-        self.mockDb.executeQuery.side_effect = mockQuery
+        self._setupMockForBuildCheck(steelQty=5000, sheetQty=200, alumQty=2000)
         
         result = self.builder.buildContainer(
             containerSize="40ft",  # Needs more materials
             maxCost=500_000_000,
             currentCost=100_000_000,
-            currentWeight=3500,  # Already at 3500kg
-            maxWeight=6000,  # Only 200kg left
+            currentWeight=5500,  # Already at 5500kg
+            maxWeight=6000,  # Only 500kg left
         )
         
         # Should fail or scale down due to weight
@@ -142,6 +146,7 @@ class TestContainerBuilderMaterialChecks(unittest.TestCase):
         """Set up test fixtures."""
         self.mockDb = MagicMock()
         self.builder = ContainerBuilder(self.mockDb)
+        self.builder.setSlatParams("112mm", 6, 12.192)
 
     def test_check_steel_availability_empty(self):
         """Test _checkSteelAvailability with no inventory."""
@@ -188,4 +193,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

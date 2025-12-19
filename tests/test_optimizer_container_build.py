@@ -1,6 +1,10 @@
 """
 Tests for Optimizer container building integration.
 Tests the edge case where containers need to be built from materials.
+
+Updated for new container types:
+- container_20ft, container_40ft: Include container item in BOM
+- mooc_long, thung_xe_tai: NO container item, structure materials only
 """
 import unittest
 from unittest.mock import MagicMock, patch
@@ -17,9 +21,10 @@ class TestOptimizerContainerCheck(unittest.TestCase):
 
     def test_check_need_to_build_no_container_type(self):
         """Test _checkNeedToBuildContainer with no containerType."""
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(None, [])
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(None, [])
         self.assertFalse(needBuild)
         self.assertEqual(size, "")
+        self.assertFalse(usingPrebuilt)
 
     def test_check_need_to_build_20ft_available(self):
         """Test _checkNeedToBuildContainer when 20ft container is available."""
@@ -28,12 +33,13 @@ class TestOptimizerContainerCheck(unittest.TestCase):
             {"type": "steel_box", "name": "Thép hộp"},
         ]
         
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
             "container_20ft", variableItems
         )
         
         self.assertFalse(needBuild)
         self.assertEqual(size, "20ft")
+        self.assertTrue(usingPrebuilt)  # Using pre-built container
 
     def test_check_need_to_build_40ft_unavailable(self):
         """Test _checkNeedToBuildContainer when 40ft not available."""
@@ -42,12 +48,13 @@ class TestOptimizerContainerCheck(unittest.TestCase):
             {"type": "steel_box", "name": "Thép hộp"},
         ]
         
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
             "container_40ft", variableItems
         )
         
         self.assertTrue(needBuild)
         self.assertEqual(size, "40ft")
+        self.assertFalse(usingPrebuilt)  # Need to build
 
     def test_check_need_to_build_no_containers_at_all(self):
         """Test _checkNeedToBuildContainer when no containers in inventory."""
@@ -56,12 +63,13 @@ class TestOptimizerContainerCheck(unittest.TestCase):
             {"type": "galvanized_sheet", "name": "Tôn mạ kẽm"},
         ]
         
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
             "container_20ft", variableItems
         )
         
         self.assertTrue(needBuild)
         self.assertEqual(size, "20ft")
+        self.assertFalse(usingPrebuilt)
 
     def test_check_need_to_build_40ft_only_20ft_available(self):
         """Test requesting 40ft when only 20ft available."""
@@ -69,12 +77,151 @@ class TestOptimizerContainerCheck(unittest.TestCase):
             {"type": "container", "name": "Container 20ft used"},
         ]
         
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
             "container_40ft", variableItems
         )
         
         self.assertTrue(needBuild)
         self.assertEqual(size, "40ft")
+        self.assertFalse(usingPrebuilt)
+
+
+class TestOptimizerMoocLongThungXeTai(unittest.TestCase):
+    """Test container checking for mooc_long and thung_xe_tai types."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mockDb = MagicMock()
+        self.optimizer = Optimizer(self.mockDb)
+
+    def test_mooc_long_never_uses_container(self):
+        """Test that mooc_long always builds structure, never uses container."""
+        variableItems = [
+            {"type": "container", "name": "Vỏ container 40 feet"},
+            {"type": "container", "name": "Vỏ container 20 feet"},
+            {"type": "steel_box", "name": "Thép hộp"},
+        ]
+        
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
+            "mooc_long", variableItems
+        )
+        
+        self.assertTrue(needBuild)  # Always build structure
+        self.assertEqual(size, "40ft")  # Uses 40ft as scaling base
+        self.assertFalse(usingPrebuilt)  # Never pre-built
+
+    def test_thung_xe_tai_never_uses_container(self):
+        """Test that thung_xe_tai always builds structure, never uses container."""
+        variableItems = [
+            {"type": "container", "name": "Vỏ container 40 feet"},
+            {"type": "container", "name": "Vỏ container 20 feet"},
+            {"type": "steel_box", "name": "Thép hộp"},
+        ]
+        
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
+            "thung_xe_tai", variableItems
+        )
+        
+        self.assertTrue(needBuild)  # Always build structure
+        self.assertEqual(size, "40ft")  # Uses 40ft as scaling base
+        self.assertFalse(usingPrebuilt)  # Never pre-built
+
+    def test_mooc_long_with_no_inventory(self):
+        """Test mooc_long with empty inventory."""
+        variableItems = []
+        
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
+            "mooc_long", variableItems
+        )
+        
+        self.assertTrue(needBuild)
+        self.assertEqual(size, "40ft")
+        self.assertFalse(usingPrebuilt)
+
+    def test_thung_xe_tai_with_no_inventory(self):
+        """Test thung_xe_tai with empty inventory."""
+        variableItems = []
+        
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
+            "thung_xe_tai", variableItems
+        )
+        
+        self.assertTrue(needBuild)
+        self.assertEqual(size, "40ft")
+        self.assertFalse(usingPrebuilt)
+
+
+class TestOptimizerContainerHelpers(unittest.TestCase):
+    """Test Optimizer container helper methods."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mockDb = MagicMock()
+        self.optimizer = Optimizer(self.mockDb)
+
+    def test_should_include_container_item_20ft(self):
+        """Test _shouldIncludeContainerItem for container_20ft."""
+        self.assertTrue(self.optimizer._shouldIncludeContainerItem("container_20ft"))
+
+    def test_should_include_container_item_40ft(self):
+        """Test _shouldIncludeContainerItem for container_40ft."""
+        self.assertTrue(self.optimizer._shouldIncludeContainerItem("container_40ft"))
+
+    def test_should_not_include_container_item_mooc_long(self):
+        """Test _shouldIncludeContainerItem for mooc_long."""
+        self.assertFalse(self.optimizer._shouldIncludeContainerItem("mooc_long"))
+
+    def test_should_not_include_container_item_thung_xe_tai(self):
+        """Test _shouldIncludeContainerItem for thung_xe_tai."""
+        self.assertFalse(self.optimizer._shouldIncludeContainerItem("thung_xe_tai"))
+
+    def test_prebuilt_container_weight_20ft(self):
+        """Test _getPrebuiltContainerWeight for 20ft container."""
+        weight = self.optimizer._getPrebuiltContainerWeight("container_20ft")
+        self.assertEqual(weight, 1900)
+
+    def test_prebuilt_container_weight_40ft(self):
+        """Test _getPrebuiltContainerWeight for 40ft container."""
+        weight = self.optimizer._getPrebuiltContainerWeight("container_40ft")
+        self.assertEqual(weight, 2500)
+
+    def test_prebuilt_container_weight_mooc_long(self):
+        """Test _getPrebuiltContainerWeight for mooc_long (should be 0)."""
+        weight = self.optimizer._getPrebuiltContainerWeight("mooc_long")
+        self.assertEqual(weight, 0)
+
+    def test_prebuilt_container_weight_thung_xe_tai(self):
+        """Test _getPrebuiltContainerWeight for thung_xe_tai (should be 0)."""
+        weight = self.optimizer._getPrebuiltContainerWeight("thung_xe_tai")
+        self.assertEqual(weight, 0)
+
+    def test_effective_max_weight_prebuilt_20ft(self):
+        """Test _getEffectiveMaxWeight for pre-built 20ft container."""
+        # 6720 - 1900 = 4820
+        maxWeight = self.optimizer._getEffectiveMaxWeight("container_20ft", True)
+        self.assertEqual(maxWeight, 4820)
+
+    def test_effective_max_weight_prebuilt_40ft(self):
+        """Test _getEffectiveMaxWeight for pre-built 40ft container."""
+        # 6720 - 2500 = 4220
+        maxWeight = self.optimizer._getEffectiveMaxWeight("container_40ft", True)
+        self.assertEqual(maxWeight, 4220)
+
+    def test_effective_max_weight_built_from_materials(self):
+        """Test _getEffectiveMaxWeight when building from materials."""
+        # When building, no container weight to subtract
+        maxWeight = self.optimizer._getEffectiveMaxWeight("container_40ft", False)
+        self.assertEqual(maxWeight, 6720)
+
+    def test_effective_max_weight_mooc_long(self):
+        """Test _getEffectiveMaxWeight for mooc_long."""
+        maxWeight = self.optimizer._getEffectiveMaxWeight("mooc_long", False)
+        self.assertEqual(maxWeight, 6720)
+
+    def test_effective_max_weight_thung_xe_tai(self):
+        """Test _getEffectiveMaxWeight for thung_xe_tai."""
+        maxWeight = self.optimizer._getEffectiveMaxWeight("thung_xe_tai", False)
+        self.assertEqual(maxWeight, 6720)
 
 
 class TestOptimizerContainerBuildIntegration(unittest.TestCase):
@@ -84,47 +231,6 @@ class TestOptimizerContainerBuildIntegration(unittest.TestCase):
         """Set up test fixtures with comprehensive mocks."""
         self.mockDb = MagicMock()
         self.optimizer = Optimizer(self.mockDb)
-
-    def _setupMockInventory(self, includeContainer=True, containerSize="20"):
-        """Helper to setup mock inventory responses."""
-        walkingFloorResult = [
-            (1, "R2DX_test", "Walking Floor R2DX", "set", 5, 1000000000, 200000000.0),
-        ]
-        
-        aluminumConstantsResult = [(2.313, 24)]
-        
-        aluminumInventoryResult = [(5000,)]  # 5000kg available
-        
-        aluminumItemResult = [
-            (2, "Nhom_thanh", "Nhôm thanh", "kg", 5000, 500000000, 100000.0),
-        ]
-        
-        variableItemsResult = [
-            (3, "thephop", "Thép hộp", "kg", "steel_box", 2000, 30000000, 15000.0),
-            (4, "ton_ma_kem", "Tôn mạ kẽm 0.95 x 1200", "m", "galvanized_sheet", 100, 20000000, 200000.0),
-        ]
-        
-        if includeContainer:
-            variableItemsResult.append(
-                (5, f"container_{containerSize}ft", f"Container {containerSize}ft", 
-                 "set", "container", 3, 150000000, 50000000.0)
-            )
-        
-        def mockQuery(query, params=None):
-            queryLower = query.lower()
-            if "walking_floor" in queryLower:
-                return walkingFloorResult
-            elif "aluminum_bar_constants" in queryLower:
-                return aluminumConstantsResult
-            elif "final_quantity" in queryLower and "aluminum" in queryLower:
-                return aluminumInventoryResult
-            elif "type = 'aluminum'" in queryLower:
-                return aluminumItemResult
-            elif "any(%s)" in queryLower:
-                return variableItemsResult
-            return []
-        
-        self.mockDb.executeQuery.side_effect = mockQuery
 
     def test_optimize_with_available_container(self):
         """Test optimize when container is available in inventory.
@@ -173,32 +279,34 @@ class TestOptimizerEdgeCases(unittest.TestCase):
 
     def test_container_type_parsing_40ft(self):
         """Test container type parsing for 40ft."""
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, _ = self.optimizer._checkNeedToBuildContainer(
             "container_40ft", []
         )
         self.assertEqual(size, "40ft")
 
     def test_container_type_parsing_20ft(self):
         """Test container type parsing for 20ft."""
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, _ = self.optimizer._checkNeedToBuildContainer(
             "container_20ft", []
         )
         self.assertEqual(size, "20ft")
 
     def test_container_type_parsing_with_extra_text(self):
-        """Test container type parsing with extra text."""
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        """Test container type parsing with invalid type returns empty."""
+        needBuild, size, _ = self.optimizer._checkNeedToBuildContainer(
             "container_40ft_special", []
         )
-        self.assertEqual(size, "40ft")
+        # Invalid type should return empty string
+        self.assertEqual(size, "")
 
     def test_invalid_container_type(self):
         """Test with invalid container type (no size)."""
-        needBuild, size = self.optimizer._checkNeedToBuildContainer(
+        needBuild, size, usingPrebuilt = self.optimizer._checkNeedToBuildContainer(
             "some_invalid_type", []
         )
         self.assertFalse(needBuild)
         self.assertEqual(size, "")
+        self.assertFalse(usingPrebuilt)
 
 
 def main():
@@ -208,4 +316,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
