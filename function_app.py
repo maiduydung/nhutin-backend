@@ -1,3 +1,6 @@
+"""
+Azure Functions HTTP endpoints for Nhu Tin BOM system.
+"""
 import json
 import traceback
 
@@ -12,15 +15,15 @@ from services.optimizer import Optimizer
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 database = Database()
 
+
 @app.function_name(name="health")
 @app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def health(req: func.HttpRequest) -> func.HttpResponse:
-    """Simple health check endpoint."""
+    """Health check endpoint."""
     return func.HttpResponse(
         body=json.dumps({
             "status": "ok",
-            "message": "NhuTin DB Receipts Processing Service is running",
-            "function": "Nhu Tin Bill of Materials"
+            "message": "NhuTin BOM Service is running",
         }),
         mimetype="application/json",
         status_code=200,
@@ -29,28 +32,27 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.function_name(name="process-receipts")
 @app.route(route="process_receipt", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
-def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
+def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Trigger receipts processing from the user inputs, in JSON format.
-
-    Route: /api/process_receipt
+    Process receipt and return optimized BOM.
+    
+    POST /api/process_receipt
     """
     try:
         try:
             body = req.get_json()
         except ValueError:
-            logger.warning("❌ Invalid JSON payload; defaulting to empty dict.")
+            logger.warning("Invalid JSON payload")
             body = {}
 
-        logger.info(f"✅ Received request body: {body}")
+        logger.info(f"Request: {body}")
 
         try:
             userInput = UserInput.model_validate(body or {})
-            logger.info(f"✅ User input: {userInput}")
-        except ValidationError as validationError:
-            logger.warning(f"❌ Validation failed: {validationError}")
+        except ValidationError as e:
+            logger.warning(f"Validation failed: {e}")
             return func.HttpResponse(
-                body=json.dumps({"status": "validation_error", "errors": validationError.errors()}),
+                body=json.dumps({"status": "validation_error", "errors": e.errors()}),
                 mimetype="application/json",
                 status_code=400,
             )
@@ -64,9 +66,10 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
             receiptPrice=userInput.receiptPrice,
             containerType=userInput.containerType,
             thickness=userInput.thickness,
+            targetProfitMargin=userInput.targetProfitMargin,
         )
 
-        responsePayload = {
+        response = {
             "status": "ok",
             "items": result["items"],
             "totalWeight": result["totalWeight"],
@@ -75,20 +78,17 @@ def process_receipt(req: func.HttpRequest) -> func.HttpResponse:
             "profit": result["profit"],
             "profitMargin": result["profitMargin"],
             "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
-            # Material loss factor and constraints for frontend display
             "constraints": result.get("constraints", {}),
-            "estimatedUsableWeight": result.get("estimatedUsableWeight", result["totalWeight"]),
         }
-        logger.info(f"✅ Response payload: {responsePayload}")
         
         return func.HttpResponse(
-            body=json.dumps(responsePayload, default=str),
+            body=json.dumps(response, default=str),
             mimetype="application/json",
             status_code=200,
         )
 
     except Exception:
-        logger.error(f"❌ Error processing request: {traceback.format_exc()}")
+        logger.error(f"Error: {traceback.format_exc()}")
         return func.HttpResponse(
             body=json.dumps({"status": "error", "message": traceback.format_exc()}),
             mimetype="application/json",

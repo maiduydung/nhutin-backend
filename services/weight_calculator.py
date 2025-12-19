@@ -1,6 +1,10 @@
-from config import WALKING_FLOORS, CONTAINER_EMPTY_WEIGHTS
+"""
+Weight Calculator Service.
+Calculates weight for different item types.
+"""
+import re
+from config import logger, WALKING_FLOORS, CONTAINER_EMPTY_WEIGHTS, HYDRAULIC_PUMP_WEIGHT_KG
 from services.database import Database
-from config import logger
 
 
 class WeightCalculator:
@@ -25,19 +29,11 @@ class WeightCalculator:
         containerLength: float, slatType: str, thickness: int, db: Database
     ) -> tuple[float, float, int]:
         """
-        Calculate aluminum bar weight from constants based on slatType and thickness.
-        
-        Args:
-            containerLength: Container length in meters
-            slatType: Slat size ("97mm" or "112mm")
-            thickness: Bar thickness (6 or 8 mm)
-            db: Database connection
-        
+        Calculate aluminum bar weight from constants.
         Returns: (weight_kg, density_kg_per_m, bars_per_container)
         """
         sizeMm = int(slatType.replace("mm", ""))
         
-        # Query for exact match of size_mm and thickness_mm
         result = db.executeQuery(
             """
             SELECT density_kg_per_m, bars_per_container
@@ -49,11 +45,7 @@ class WeightCalculator:
         )
 
         if not result:
-            # Fallback: try any thickness for this size
-            logger.warning(
-                f"No exact match for slatType={slatType}, thickness={thickness}mm. "
-                f"Trying fallback..."
-            )
+            logger.warning(f"No exact match for {slatType}/{thickness}mm, using fallback")
             result = db.executeQuery(
                 """
                 SELECT density_kg_per_m, bars_per_container
@@ -66,18 +58,11 @@ class WeightCalculator:
             )
             
         if not result:
-            raise ValueError(
-                f"No aluminum constants found for slatType={slatType}, thickness={thickness}mm"
-            )
+            raise ValueError(f"No aluminum constants for {slatType}/{thickness}mm")
 
         density = float(result[0][0])
         bars = int(result[0][1])
         weight = containerLength * density * bars
-        
-        logger.info(
-            f"Aluminum calculation: {containerLength}m × {density} kg/m × {bars} bars = {weight:.2f} kg "
-            f"(slatType={slatType}, thickness={thickness}mm)"
-        )
         
         return weight, density, bars
 
@@ -85,10 +70,8 @@ class WeightCalculator:
     def calculateGalvanizedSheetWeightPerMeter(itemName: str) -> float:
         """
         Calculate weight per meter for galvanized sheet.
-        Formula: Thickness (mm) × Width (mm) × Density (kg/m³) / 1,000,000
+        Formula: Thickness (mm) × Width (mm) × Density / 1,000,000
         """
-        # Extract dimensions from name like "Tôn mạ kẽm 0.95 x 1200"
-        import re
         pattern = r"(\d+\.?\d*)\s*x\s*(\d+)"
         match = re.search(pattern, itemName)
         
@@ -99,28 +82,13 @@ class WeightCalculator:
         thickness = float(match.group(1))
         width = float(match.group(2))
         
-        weightPerMeter = (
-            thickness * width * WeightCalculator.GALVANIZED_STEEL_DENSITY / 1_000_000
-        )
-        return weightPerMeter
+        return thickness * width * WeightCalculator.GALVANIZED_STEEL_DENSITY / 1_000_000
 
-    # Weight constants for non-kg items (approximate values)
-    # Container weight from CONTAINER_EMPTY_WEIGHTS config
-    # 20ft: 1900 kg, 40ft: 2500 kg (actual container empty weight)
-    CONTAINER_WEIGHT = {
-        "20ft": CONTAINER_EMPTY_WEIGHTS.get("container_20ft", 1900),  # 1900 kg
-        "40ft": CONTAINER_EMPTY_WEIGHTS.get("container_40ft", 2500),  # 2500 kg
-    }
-    HYDRAULIC_PUMP_WEIGHT = 50  # kg per unit (approximate)
-    
     @staticmethod
     def calculateItemWeight(
         itemType: str, unit: str, quantity: float, itemName: str = ""
     ) -> float:
-        """
-        Calculate total weight for an item based on its type and unit.
-        Supports: kg (direct), set (walking floors, containers), m (galvanized sheets)
-        """
+        """Calculate total weight for an item based on type and unit."""
         # Direct weight in kg
         if unit == "kg":
             return quantity
@@ -134,60 +102,18 @@ class WeightCalculator:
         
         # Container sets
         if unit == "set" and itemType == "container":
-            # Detect container size from name
             if "40" in itemName.lower():
-                return quantity * WeightCalculator.CONTAINER_WEIGHT["40ft"]
-            return quantity * WeightCalculator.CONTAINER_WEIGHT["20ft"]
+                return quantity * CONTAINER_EMPTY_WEIGHTS.get("container_40ft", 2500)
+            return quantity * CONTAINER_EMPTY_WEIGHTS.get("container_20ft", 1900)
         
         # Galvanized sheets (per meter)
         if unit == "m" and itemType == "galvanized_sheet":
-            weightPerMeter = WeightCalculator.calculateGalvanizedSheetWeightPerMeter(
-                itemName
-            )
+            weightPerMeter = WeightCalculator.calculateGalvanizedSheetWeightPerMeter(itemName)
             return quantity * weightPerMeter
         
-        # Hydraulic pump (per piece - "cái" or "pcs")
+        # Hydraulic pump
         if itemType == "hydraulic_pump":
-            return quantity * WeightCalculator.HYDRAULIC_PUMP_WEIGHT
+            return quantity * HYDRAULIC_PUMP_WEIGHT_KG
         
         # Default: treat as kg if unknown
-        logger.warning(f"Unknown weight calculation for type={itemType}, unit={unit}")
-        return quantity if unit in ["kg", "pcs", "cái"] else 0.0
-
-
-def main():
-    """Test weight calculations."""
-    from services.database import Database
-    
-    db = Database()
-    
-    # Test walking floor
-    weight, itemType = WeightCalculator.calculateWalkingFloorWeight("R2DX")
-    print(f"R2DX weight: {weight} kg, type: {itemType}")
-    
-    # Test aluminum bars with different slat/thickness combos
-    print("\n--- Aluminum Bar Weight Tests ---")
-    testCases = [
-        (12.192, "97mm", 6),   # 40ft, 97mm, 6mm thick
-        (12.192, "112mm", 6),  # 40ft, 112mm, 6mm thick
-        (12.192, "112mm", 8),  # 40ft, 112mm, 8mm thick
-        (6.096, "97mm", 6),    # 20ft, 97mm, 6mm thick
-    ]
-    for length, slatType, thickness in testCases:
-        alumWeight, density, bars = WeightCalculator.calculateAluminumBarWeight(
-            length, slatType, thickness, db
-        )
-        print(f"  {length}m, {slatType}, {thickness}mm: {alumWeight:.2f} kg")
-    
-    # Test galvanized sheet
-    weightPerM = WeightCalculator.calculateGalvanizedSheetWeightPerMeter(
-        "Tôn mạ kẽm 0.95 x 1200"
-    )
-    print(f"\nGalvanized sheet weight per meter: {weightPerM} kg/m")
-    
-    db.close()
-
-
-if __name__ == "__main__":
-    main()
-
+        return quantity if unit in ["kg", "pcs", "cái", "Con"] else 0.0
