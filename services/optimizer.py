@@ -105,20 +105,21 @@ class Optimizer:
                 fixedWeight += prebuiltContainerItem["weight"]
                 excludeIds.add(prebuiltContainerItem["id"])  # Exclude from variable fill
         
-        # Get variable items and fill to target
+        # Get variable items and fill to targets
         variableItems = self.variableFiller.getVariableItems(containerType)
         
         # Filter out container items when using pre-built container
         if prebuiltContainer and not needToBuild:
             variableItems = [v for v in variableItems if v["type"] != "container"]
         
-        selectedVariables = self.variableFiller.fillToTarget(
+        # Use new fillToTargets with both weight and margin constraints
+        selectedVariables = self.variableFiller.fillToTargets(
             variableItems=variableItems,
             targetCost=targetCost,
             currentCost=fixedCost,
-            targetWeight=targetWeight,
+            minWeight=minWeight,  # Hard constraint: must reach minimum weight
+            maxWeight=maxWeight,  # Soft constraint: prefer not to exceed
             currentWeight=fixedWeight,
-            maxWeight=effectiveMaxWeight,
             excludeIds=excludeIds,
             skipContainerBuildTypes=needToBuild,
         )
@@ -134,8 +135,23 @@ class Optimizer:
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
         
+        # Check if constraints were met (with 0.5% tolerance for floating point)
+        weightMet = totalWeight >= minWeight
+        actualMargin = profitMargin / 100
+        marginMet = (minMargin - 0.005) <= actualMargin <= (maxMargin + 0.005)
+        warnings = []
+        
+        if not weightMet:
+            warnings.append(f"Weight {totalWeight:.0f}kg below minimum {minWeight}kg")
+        if not marginMet:
+            if profitMargin < minMargin * 100:
+                warnings.append(f"Margin {profitMargin:.1f}% below target (increase receipt price)")
+            else:
+                warnings.append(f"Margin {profitMargin:.1f}% above target (weight limit reached)")
+        
+        status = "✅" if weightMet and marginMet else "⚠️"
         logger.info(
-            f"✅ Result: weight={totalWeight:.0f}kg, cost={totalCost:,.0f}, "
+            f"{status} Result: weight={totalWeight:.0f}kg, cost={totalCost:,.0f}, "
             f"margin={profitMargin:.1f}% (target: {targetProfitMargin*100:.0f}%)"
         )
         
@@ -147,6 +163,8 @@ class Optimizer:
             "profit": round(profit, 2),
             "profitMargin": round(profitMargin, 2),
             "containerBuiltFromMaterials": needToBuild and len(containerItems) > 0,
+            "constraintsMet": weightMet and marginMet,
+            "warnings": warnings,
             "constraints": {
                 "containerType": containerType,
                 "containerLength": containerLength,
