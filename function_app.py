@@ -24,6 +24,7 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
         body=json.dumps({
             "status": "ok",
             "message": "NhuTin BOM Service is running",
+            "functionName": "health",
         }),
         mimetype="application/json",
         status_code=200,
