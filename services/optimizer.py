@@ -490,33 +490,49 @@ class Optimizer:
         selectedMap = {item["id"]: item for item in allItems}
         
         # Priority 1: Add more aluminum (best for weight and cost)
-        if aluminumItem and aluminumItem["id"] in selectedMap:
+        # Find aluminum item - could be fixed item OR from container build
+        aluminumToBoost = aluminumItem
+        if not aluminumToBoost:
+            # Look for aluminum in allItems (e.g., from container build)
+            for item in allItems:
+                if item.get("type") == "aluminum" or "nhôm" in item.get("name", "").lower():
+                    aluminumToBoost = item
+                    break
+        
+        if aluminumToBoost and aluminumToBoost["id"] in selectedMap:
+            # Get total available aluminum from ALL aluminum items in inventory
             result = self.db.executeQuery(
                 """
-                SELECT ir.final_quantity
+                SELECT COALESCE(SUM(ir.final_quantity), 0)
                 FROM inventory_records ir
                 JOIN items i ON ir.item_id = i.id
                 WHERE i.type = 'aluminum'
-                ORDER BY ir.record_date DESC
-                LIMIT 1
+                AND ir.final_quantity > 0
                 """
             )
             
             if result:
-                availableQty = float(result[0][0])
-                alreadyUsed = aluminumItem["quantity"]
-                remainingAvailable = availableQty - alreadyUsed
+                totalAvailableQty = float(result[0][0])
+                # Sum all aluminum already used in allItems
+                alreadyUsed = sum(
+                    item["quantity"] for item in allItems 
+                    if item.get("type") == "aluminum" or "nhôm" in item.get("name", "").lower()
+                )
+                remainingAvailable = totalAvailableQty - alreadyUsed
                 
                 if remainingAvailable > 0:
-                    unitPrice = aluminumItem["unitPrice"]
+                    unitPrice = aluminumToBoost["unitPrice"]
                     maxByBudget = budgetRemaining / unitPrice if unitPrice > 0 else 0
-                    additionalQty = min(remainingAvailable, maxByBudget)
+                    # Also respect weight limit
+                    weightRemaining = self.MAX_WEIGHT - currentWeight
+                    maxByWeight = weightRemaining  # aluminum: 1 kg = 1 kg weight
+                    additionalQty = min(remainingAvailable, maxByBudget, maxByWeight)
                     
                     if additionalQty > 0:
                         additionalCost = additionalQty * unitPrice
-                        aluminumItem["quantity"] += additionalQty
-                        aluminumItem["weight"] += additionalQty  # aluminum: weight = quantity
-                        aluminumItem["totalValue"] += additionalCost
+                        aluminumToBoost["quantity"] += additionalQty
+                        aluminumToBoost["weight"] += additionalQty  # aluminum: weight = quantity
+                        aluminumToBoost["totalValue"] += additionalCost
                         
                         budgetRemaining -= additionalCost
                         currentWeight += additionalQty
@@ -525,7 +541,7 @@ class Optimizer:
                         
                         logger.info(
                             f"Added {additionalQty:.2f}kg aluminum to fill budget "
-                            f"(remaining: {budgetRemaining:,.0f})"
+                            f"(remaining: {budgetRemaining:,.0f}, weight: {currentWeight:.0f}kg)"
                         )
         
         # Priority 2: Add more of existing steel/material items
