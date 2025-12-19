@@ -100,14 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - After processing, ~6000 kg of usable cargo expected
 
 #### Profit Margin Target
-- Reduced target profit margin from 25% to **20%**
+- Reduced target profit margin from 25% to **15%**
 - Reduced minimum boost profit margin from 10% to **5%** (for aluminum weight boost)
 - More aggressive budget filling to ensure profit margin stays within target
 
 ### Added
 
 #### Budget Filling Logic (`services/optimizer.py`)
-- **New Method**: `_fillBudgetToTargetMargin()` - Fills remaining budget when profit margin exceeds 20%
+- **New Method**: `_fillBudgetToTargetMargin()` - Fills remaining budget when profit margin exceeds 15%
 - Priority order for budget filling:
   1. Aluminum (best weight-to-cost ratio)
   2. Steel (existing items)
@@ -120,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Root Cause**: Algorithm stopped at weight limit (6000 kg) before spending enough budget
 - **Fix**: With material loss factor, algorithm can now add materials up to 4144 kg
 - **Fix**: Added budget filling step to spend remaining budget after weight optimization
-- Expected result: profit margin reduced from 34-35% to 15-20%
+- Expected result: profit margin reduced from 34-35% to 10-15%
 
 ### Configuration Changes (`services/optimizer.py`)
 
@@ -129,7 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `BASE_MAX_WEIGHT` | N/A | 6000 kg | Base weight limit |
 | `MATERIAL_LOSS_FACTOR` | N/A | 0.12 (12%) | Processing loss factor |
 | `MAX_WEIGHT` | 6000 kg | 6720 kg | Effective max weight |
-| `MAX_PROFIT_MARGIN` | 0.25 (25%) | 0.20 (20%) | Target profit margin |
+| `MAX_PROFIT_MARGIN` | 0.25 (25%) | 0.15 (15%) | Target profit margin |
 | `MIN_BOOST_PROFIT_MARGIN` | 0.10 (10%) | 0.05 (5%) | Minimum margin for boost |
 
 ### Documentation
@@ -342,7 +342,7 @@ For a KSD container with 425M VND receipt price:
   - Fixed items selection (walking floor + aluminum bars)
   - Variable items optimization (steel, galvanized sheets)
   - Greedy algorithm with weight-to-cost ratio prioritization
-  - Constraint enforcement (weight range: 3000-6000kg, profit margin ≤ 20%)
+  - Constraint enforcement (weight range: 3000-6000kg, profit margin ≤ 15%)
   - Inventory availability checking
 
 #### API Enhancements
@@ -410,7 +410,7 @@ For a KSD container with 425M VND receipt price:
 
 - **Constraints**:
   - Weight: 3000-6000kg (soft limit, prefers under 6000kg)
-  - Profit margin: ≤ 20% of receipt price
+  - Profit margin: ≤ 15% of receipt price
   - Inventory: Uses `final_quantity` from latest records
 
 ### Documentation

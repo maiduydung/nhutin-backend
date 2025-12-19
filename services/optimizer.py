@@ -17,7 +17,7 @@ class Optimizer:
     BASE_MAX_WEIGHT = 6000  # kg (base limit before material loss)
     MATERIAL_LOSS_FACTOR = 0.12  # 12% material loss during processing
     MAX_WEIGHT = int(BASE_MAX_WEIGHT * (1 + MATERIAL_LOSS_FACTOR))  # ~6720 kg with loss factor
-    MAX_PROFIT_MARGIN = 0.20  # 20% (target profit margin)
+    MAX_PROFIT_MARGIN = 0.15  # 15% (target profit margin)
 
     def __init__(self, db: Database):
         self.db = db

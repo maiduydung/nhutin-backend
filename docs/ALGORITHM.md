@@ -18,7 +18,7 @@ This is a **Constrained Multiple Knapsack Problem** variant with the following c
      - Container 20ft (pre-built): 6720 - 1900 = **4820 kg** for materials
      - Container 40ft (pre-built): 6720 - 2500 = **4220 kg** for materials
      - Mooc Long / Thung Xe Tai: Full **6720 kg** (no pre-built container)
-2. **Budget Constraint**: Total cost ≤ 80% of receipt price (profit margin ≤ 20%)
+2. **Budget Constraint**: Total cost ≤ 85% of receipt price (profit margin ≤ 15%)
 3. **Variety Constraint**: Must use multiple item types (never select only one type)
 4. **Availability Constraint**: Cannot exceed `final_quantity` from inventory records
 5. **Container Type Constraint**: Mooc Long and Thung Xe Tai never include container items in BOM
@@ -152,7 +152,7 @@ Iteratively fill remaining weight capacity:
    - Weight reaches MAX_WEIGHT (~6720kg with material loss factor), OR
    - Budget exhausted (cost ≥ maxCost), OR
    - No more items can be added
-4. **If profit margin still too high** (> 20%):
+4. **If profit margin still too high** (> 15%):
    - Add more materials to fill remaining budget
    - Priority: aluminum first, then steel, then others
 
@@ -214,7 +214,7 @@ profit = receiptPrice - totalCost
 profitMargin = (profit / receiptPrice) × 100%
 ```
 
-**Constraint**: `profitMargin ≤ 20%` (equivalent to `totalCost ≤ receiptPrice × 0.80`)
+**Constraint**: `profitMargin ≤ 15%` (equivalent to `totalCost ≤ receiptPrice × 0.85`)
 
 ### Material Loss Factor
 
@@ -244,7 +244,7 @@ function optimize(containerLength, itemModelType, slatType, thickness, receiptPr
     
     fixedWeight = walkingFloor.weight + aluminumWeight + hydraulicPump.weight + hydraulicOil.weight
     fixedCost = walkingFloor.cost + aluminumItem.cost + hydraulicPump.cost + hydraulicOil.cost
-    maxCost = receiptPrice × 0.80  // 20% profit margin
+    maxCost = receiptPrice × 0.85  // 15% profit margin
     
     // Phase 2: Variable Items
     variableItems = getVariableItems()  // All variable types including container

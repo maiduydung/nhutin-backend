@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is an Azure Functions-based backend service for managing inventory items and optimizing container configurations. The system helps determine the optimal combination of items to build containers while maintaining weight constraints (3000-6000kg) and profit margins (less than 20% of receipt value).
+This is an Azure Functions-based backend service for managing inventory items and optimizing container configurations. The system helps determine the optimal combination of items to build containers while maintaining weight constraints (3000-6000kg) and profit margins (less than 15% of receipt value).
 
 ## Project Purpose
 
@@ -15,7 +15,7 @@ The system processes user requests containing:
 It then:
 1. Fetches required items from the database based on these specifications
 2. Optimizes item selection to keep total weight within **3000-4144kg** range (includes 12% material loss factor)
-3. Ensures profit margin stays **at or below 20%** of the receipt value
+3. Ensures profit margin stays **at or below 15%** of the receipt value
 4. Returns an optimized item list for container construction
 
 ## Architecture
@@ -232,7 +232,7 @@ Content-Type: application/json
 - `totalCost`: Total cost of all items in VND
 - `receiptPrice`: Input receipt price in VND
 - `profit`: Calculated profit (receiptPrice - totalCost)
-- `profitMargin`: Profit margin percentage (must be ≤ 20%)
+- `profitMargin`: Profit margin percentage (must be ≤ 15%)
 - `containerBuiltFromMaterials`: Boolean indicating if container was built from raw materials (true when requested container not in inventory)
 
 ## Database Statistics (as of inspection)
@@ -313,7 +313,7 @@ Content-Type: application/json
      - Flexible material substitution: aluminum compensates for steel shortfall
    - **Constraints**:
      - Weight: 3000-6000kg (soft limit, prefers under 6000kg)
-     - Profit margin: ≤ 25% of receipt price
+     - Profit margin: ≤ 15% of receipt price
      - Inventory availability: Respects `final_quantity` from database
 
 8. **Container Builder** (`services/container_builder.py`)
@@ -381,9 +381,9 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
 
 4. **Constraints Enforcement**:
    - **Weight**: Targets 3000-6720kg range (base 6000kg + 12% material loss factor)
-   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.20` (20%)
+   - **Profit Margin**: Ensures `(receiptPrice - totalCost) / receiptPrice ≤ 0.15` (15%)
    - **Inventory**: Respects `final_quantity` from latest inventory records
-   - **Budget Filling**: If profit margin exceeds 20%, adds more materials to fill budget
+   - **Budget Filling**: If profit margin exceeds 15%, adds more materials to fill budget
 
 ### Profit Calculation
 
@@ -391,7 +391,7 @@ The optimizer uses a **greedy algorithm** with a two-pass approach:
 - **Unit Price**: Calculated as `final_value / final_quantity` from latest inventory record
 - **Profit**: `receiptPrice - totalCost`
 - **Profit Margin**: `(profit / receiptPrice) × 100%`
-- **Constraint**: Profit margin must be ≤ 20%
+- **Constraint**: Profit margin must be ≤ 15%
 
 **Material Loss Factor**: The optimizer accounts for 12% material loss during processing:
 - Base weight limit: 6000 kg (target cargo weight)
@@ -431,7 +431,7 @@ Determine required items based on container specs
     ↓
 Optimize item quantities:
     - Weight constraint: 3000-6000kg
-    - Profit constraint: < 20% of receipt value
+    - Profit constraint: < 15% of receipt value
     ↓
 Return optimized item list
 ```
@@ -587,7 +587,7 @@ The `data/` directory contains:
 
 4. **Implement optimization algorithm**
    - Constraint satisfaction solver (weight range: 3000-6000kg)
-   - Profit calculation logic (profit < 20% of receipt value)
+   - Profit calculation logic (profit < 15% of receipt value)
    - Use `price_history` or `inventory_records.final_value / final_quantity` for unit prices
    - Item quantity optimization
 
