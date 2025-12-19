@@ -1,4 +1,4 @@
-from config import WALKING_FLOORS
+from config import WALKING_FLOORS, CONTAINER_EMPTY_WEIGHTS
 from services.database import Database
 from config import logger
 
@@ -105,11 +105,11 @@ class WeightCalculator:
         return weightPerMeter
 
     # Weight constants for non-kg items (approximate values)
-    # Container weight is 0 because it's the packaging, not cargo
-    # The weight constraint applies to cargo that goes INTO the container
+    # Container weight from CONTAINER_EMPTY_WEIGHTS config
+    # 20ft: 1900 kg, 40ft: 2500 kg (actual container empty weight)
     CONTAINER_WEIGHT = {
-        "20ft": 0,  # Not counted - it's the packaging
-        "40ft": 0,  # Not counted - it's the packaging
+        "20ft": CONTAINER_EMPTY_WEIGHTS.get("container_20ft", 1900),  # 1900 kg
+        "40ft": CONTAINER_EMPTY_WEIGHTS.get("container_40ft", 2500),  # 2500 kg
     }
     HYDRAULIC_PUMP_WEIGHT = 50  # kg per unit (approximate)
     

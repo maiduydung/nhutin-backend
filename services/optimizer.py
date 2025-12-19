@@ -1082,6 +1082,11 @@ class Optimizer:
             if not items:
                 continue
             
+            # Skip container type items when building container from materials
+            if skipContainerBuild and itemType == "container":
+                logger.info(f"Skipping container items - will build from materials")
+                continue
+            
             # Find best item from this type (best weight-to-cost ratio)
             bestItem = None
             bestRatio = 0
@@ -1205,6 +1210,10 @@ class Optimizer:
             
             # Skip container build material types when building container from materials
             if skipContainerBuild and item["type"] in containerBuildTypes:
+                continue
+            
+            # Skip container type items when building container from materials
+            if skipContainerBuild and item["type"] == "container":
                 continue
             
             weightPerUnit = self.weightCalculator.calculateItemWeight(
