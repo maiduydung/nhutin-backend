@@ -1,11 +1,7 @@
 """
 Variable Items Filler.
-Fills with variable items to meet BOTH weight AND margin targets.
-
-Algorithm:
-1. First, ensure we reach minWeight (HARD constraint)
-2. Then, keep adding until budget is spent to hit margin target
-3. Weight may exceed maxWeight if needed to hit margin (SOFT constraint)
+Fills remaining budget with variable items to hit target profit margin.
+Weight is maximized as a secondary goal; margin target is the priority.
 """
 from typing import Any
 from services.database import Database
@@ -14,7 +10,7 @@ from config import logger, CONTAINER_TYPES_WITH_CONTAINER
 
 
 class VariableFiller:
-    """Fills variable items to meet weight and margin targets."""
+    """Fills variable items to hit profit margin target."""
 
     VARIABLE_TYPES = [
         "steel_box", "steel_i", "steel_square", "steel_u", "steel_pipe", "steel_plate",
@@ -68,121 +64,63 @@ class VariableFiller:
         
         return items
 
-    def fillToTargets(
+    def fillToTarget(
         self,
         variableItems: list[dict],
         targetCost: float,
         currentCost: float,
-        minWeight: int,
-        maxWeight: int,
+        targetWeight: int,
         currentWeight: float,
+        maxWeight: int,
         excludeIds: set[int] = None,
         skipContainerBuildTypes: bool = False,
     ) -> list[dict]:
         """
-        Fill with variable items to meet BOTH weight AND margin targets.
+        Fill with variable items to hit target cost (margin priority).
         
-        Priority:
-        1. WEIGHT is the hard constraint (must reach minWeight)
-        2. MARGIN is the goal (spend budget to hit target)
-        3. maxWeight is soft - can exceed if needed for margin
+        Strategy:
+        1. PRIORITY: Spend budget to hit target cost (margin target)
+        2. SECONDARY: Maximize weight, but don't let weight limits block spending
+        
+        Two-pass approach:
+        - Pass 1: Add items with best weight-to-cost ratio (respect weight limit here)
+        - Pass 2: If budget remains, add MORE items even if exceeding weight limit
         """
         excludeIds = excludeIds or set()
-        weightNeeded = max(0, minWeight - currentWeight)
-        budgetAvailable = max(0, targetCost - currentCost)
+        budgetRemaining = targetCost - currentCost
+        weightRemaining = maxWeight - currentWeight
         
-        logger.info(
-            f"Fill targets: weightNeeded={weightNeeded:.0f}kg, "
-            f"budget={budgetAvailable:,.0f}, currentWeight={currentWeight:.0f}kg"
-        )
+        if budgetRemaining <= 0:
+            logger.warning(f"No budget remaining: target={targetCost:,.0f}, current={currentCost:,.0f}")
+            return []
         
         # Filter candidates
-        candidates = self._filterCandidates(
-            variableItems, excludeIds, skipContainerBuildTypes
-        )
-        
-        selected = []
-        selectedMap = {}
-        usedQty = {}
-        totalWeight = 0
-        totalCost = 0
-        
-        # Sort by weight-to-cost ratio (most efficient first)
-        sortedByRatio = sorted(
-            candidates, 
-            key=lambda x: x["weightPerUnit"] / x["unitPrice"] if x["unitPrice"] > 0 else 0,
-            reverse=True
-        )
-        
-        # PHASE 1: Fill to minimum weight (HARD CONSTRAINT)
-        if weightNeeded > 0:
-            totalWeight, totalCost = self._fillToMinWeight(
-                sortedByRatio, selected, selectedMap, usedQty,
-                weightNeeded, budgetAvailable
-            )
-            logger.info(f"Phase 1 (weight): added {totalWeight:.0f}kg, cost={totalCost:,.0f}")
-        
-        # PHASE 2: Fill remaining budget to hit margin target
-        budgetRemaining = budgetAvailable - totalCost
-        
-        if budgetRemaining > 100000:  # At least 100k VND left
-            addedWeight, addedCost = self._fillRemainingBudget(
-                sortedByRatio, selected, selectedMap, usedQty,
-                budgetRemaining, currentWeight + totalWeight, maxWeight
-            )
-            totalWeight += addedWeight
-            totalCost += addedCost
-            logger.info(
-                f"Phase 2 (margin): added {addedWeight:.0f}kg more, cost={addedCost:,.0f}"
-            )
-        
-        logger.info(
-            f"Variable fill complete: {len(selected)} items, "
-            f"weight={totalWeight:.0f}kg, cost={totalCost:,.0f}"
-        )
-        
-        return selected
-
-    def _filterCandidates(
-        self, items: list[dict], excludeIds: set[int], skipBuildTypes: bool
-    ) -> list[dict]:
-        """Filter items to valid candidates."""
         candidates = []
-        for item in items:
+        for item in variableItems:
             if item["id"] in excludeIds:
                 continue
-            if skipBuildTypes and item["type"] in self.CONTAINER_BUILD_TYPES:
+            if skipContainerBuildTypes and item["type"] in self.CONTAINER_BUILD_TYPES:
                 continue
             if item["unitPrice"] <= 0 or item["availableQty"] <= 0:
                 continue
-            if item["weightPerUnit"] <= 0:
-                continue
-            candidates.append(item)
-        return candidates
-
-    def _fillToMinWeight(
-        self,
-        sortedItems: list[dict],
-        selected: list,
-        selectedMap: dict,
-        usedQty: dict,
-        weightNeeded: float,
-        budgetAvailable: float,
-    ) -> tuple[float, float]:
-        """
-        Phase 1: Add items until minWeight is reached.
-        Ignores budget constraint - weight is priority.
-        """
-        totalWeight = 0
-        totalCost = 0
+            
+            ratio = item["weightPerUnit"] / item["unitPrice"] if item["unitPrice"] > 0 else 0
+            candidates.append((ratio, item))
         
-        for item in sortedItems:
-            if totalWeight >= weightNeeded:
+        selected = []
+        selectedMap = {}  # id -> selected item
+        usedQty = {}  # id -> quantity already used
+        
+        # PASS 1: Fill with weight-to-cost ratio, respecting weight limit
+        sortedByRatio = sorted(candidates, key=lambda x: x[0], reverse=True)
+        
+        for ratio, item in sortedByRatio:
+            if budgetRemaining <= 0 or weightRemaining <= 0:
                 break
             
-            weightStillNeeded = weightNeeded - totalWeight
-            qtyNeededForWeight = max(1, int(weightStillNeeded / item["weightPerUnit"]) + 1)
-            maxQty = min(item["availableQty"], qtyNeededForWeight)
+            maxByBudget = int(budgetRemaining / item["unitPrice"])
+            maxByWeight = int(weightRemaining / item["weightPerUnit"]) if item["weightPerUnit"] > 0 else item["availableQty"]
+            maxQty = min(item["availableQty"], maxByBudget, maxByWeight)
             
             if maxQty <= 0:
                 continue
@@ -190,106 +128,81 @@ class VariableFiller:
             weight = item["weightPerUnit"] * maxQty
             cost = item["unitPrice"] * maxQty
             
-            self._addToSelected(selected, selectedMap, usedQty, item, maxQty, weight, cost)
-            totalWeight += weight
-            totalCost += cost
-        
-        return totalWeight, totalCost
-
-    def _fillRemainingBudget(
-        self,
-        sortedItems: list[dict],
-        selected: list,
-        selectedMap: dict,
-        usedQty: dict,
-        budgetRemaining: float,
-        currentWeight: float,
-        maxWeight: int,
-    ) -> tuple[float, float]:
-        """
-        Phase 2: Spend remaining budget to hit margin target.
-        maxWeight + 50% tolerance is the hard cap (physical limit).
-        """
-        totalWeight = 0
-        totalCost = 0
-        
-        # Allow 50% overage max (physical container limit)
-        hardWeightCap = int(maxWeight * 1.5)
-        
-        for item in sortedItems:
-            if budgetRemaining <= 100000:
-                break
-            if currentWeight + totalWeight >= hardWeightCap:
-                break
-            
-            alreadyUsed = usedQty.get(item["id"], 0)
-            remaining = item["availableQty"] - alreadyUsed
-            
-            if remaining <= 0:
-                continue
-            
-            # How much can we add?
-            maxByBudget = int(budgetRemaining / item["unitPrice"])
-            weightRoom = max(0, hardWeightCap - (currentWeight + totalWeight))
-            maxByWeight = max(1, int(weightRoom / item["weightPerUnit"])) if item["weightPerUnit"] > 0 else remaining
-            
-            addQty = min(remaining, maxByBudget, maxByWeight)
-            
-            if addQty <= 0:
-                continue
-            
-            weight = item["weightPerUnit"] * addQty
-            cost = item["unitPrice"] * addQty
-            
-            self._addToSelected(selected, selectedMap, usedQty, item, addQty, weight, cost)
-            totalWeight += weight
-            totalCost += cost
-            budgetRemaining -= cost
-        
-        return totalWeight, totalCost
-
-    def _addToSelected(
-        self,
-        selected: list,
-        selectedMap: dict,
-        usedQty: dict,
-        item: dict,
-        qty: int,
-        weight: float,
-        cost: float,
-    ):
-        """Add or update item in selected list."""
-        if item["id"] in selectedMap:
-            existing = selectedMap[item["id"]]
-            existing["quantity"] += qty
-            existing["totalValue"] = round(existing["totalValue"] + cost, 2)
-            existing["weight"] = round(existing["weight"] + weight, 2)
-        else:
             selectedItem = {
                 "id": item["id"],
                 "code": item["code"],
                 "name": item["name"],
                 "unit": item["unit"],
                 "type": item["type"],
-                "quantity": qty,
+                "quantity": maxQty,
                 "unitPrice": item["unitPrice"],
                 "totalValue": round(cost, 2),
                 "weight": round(weight, 2),
             }
+            
             selected.append(selectedItem)
             selectedMap[item["id"]] = selectedItem
+            usedQty[item["id"]] = maxQty
+            budgetRemaining -= cost
+            weightRemaining -= weight
         
-        usedQty[item["id"]] = usedQty.get(item["id"], 0) + qty
-
-    # Backwards compatibility
-    def fillToTarget(self, *args, **kwargs):
-        return self.fillToTargets(
-            variableItems=kwargs.get("variableItems", args[0] if args else []),
-            targetCost=kwargs.get("targetCost", args[1] if len(args) > 1 else 0),
-            currentCost=kwargs.get("currentCost", args[2] if len(args) > 2 else 0),
-            minWeight=kwargs.get("targetWeight", args[3] if len(args) > 3 else 0),
-            maxWeight=kwargs.get("maxWeight", args[4] if len(args) > 4 else 999999),
-            currentWeight=kwargs.get("currentWeight", args[5] if len(args) > 5 else 0),
-            excludeIds=kwargs.get("excludeIds"),
-            skipContainerBuildTypes=kwargs.get("skipContainerBuildTypes", False),
+        # PASS 2: If budget remains, add more items IGNORING weight limit
+        # Sort by cost (most expensive first to fill budget faster)
+        if budgetRemaining > 10000:  # More than 10K VND remaining
+            logger.info(f"Pass 2: {budgetRemaining:,.0f} budget remaining, filling without weight limit")
+            sortedByCost = sorted(candidates, key=lambda x: x[1]["unitPrice"], reverse=True)
+            
+            for ratio, item in sortedByCost:
+                if budgetRemaining <= 10000:
+                    break
+                
+                alreadyUsed = usedQty.get(item["id"], 0)
+                remaining = item["availableQty"] - alreadyUsed
+                
+                if remaining <= 0:
+                    continue
+                
+                maxByBudget = int(budgetRemaining / item["unitPrice"])
+                addQty = min(remaining, maxByBudget)
+                
+                if addQty <= 0:
+                    continue
+                
+                addWeight = item["weightPerUnit"] * addQty
+                addCost = item["unitPrice"] * addQty
+                
+                if item["id"] in selectedMap:
+                    # Update existing item
+                    existing = selectedMap[item["id"]]
+                    existing["quantity"] += addQty
+                    existing["totalValue"] = round(existing["totalValue"] + addCost, 2)
+                    existing["weight"] = round(existing["weight"] + addWeight, 2)
+                else:
+                    # Add new item
+                    selectedItem = {
+                        "id": item["id"],
+                        "code": item["code"],
+                        "name": item["name"],
+                        "unit": item["unit"],
+                        "type": item["type"],
+                        "quantity": addQty,
+                        "unitPrice": item["unitPrice"],
+                        "totalValue": round(addCost, 2),
+                        "weight": round(addWeight, 2),
+                    }
+                    selected.append(selectedItem)
+                    selectedMap[item["id"]] = selectedItem
+                
+                usedQty[item["id"]] = usedQty.get(item["id"], 0) + addQty
+                budgetRemaining -= addCost
+        
+        totalSelectedWeight = sum(i["weight"] for i in selected)
+        totalSelectedCost = sum(i["totalValue"] for i in selected)
+        
+        logger.info(
+            f"Variable fill: {len(selected)} items, "
+            f"weight={totalSelectedWeight:.0f}kg, cost={totalSelectedCost:,.0f}, "
+            f"budget remaining={budgetRemaining:,.0f}"
         )
+        
+        return selected
