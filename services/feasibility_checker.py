@@ -161,7 +161,7 @@ class FeasibilityChecker:
                 fixedWeight=fixedWeight,
             )
         
-        # Check 2: Can we reach minimum weight?
+        # Check 2: Can we reach minimum weight with available materials?
         weightNeeded = bounds.minWeight - fixedWeight
         totalAvailableWeight = sum(
             max(0, m["availableQty"] - usedQty.get(m["id"], 0)) * m["weightPerUnit"] 
@@ -173,12 +173,59 @@ class FeasibilityChecker:
             return FeasibilityResult(
                 feasible=False,
                 bounds=bounds,
-                reason=f"Not enough materials to reach min weight. Need {weightNeeded:.0f}kg more, only {totalAvailableWeight:.0f}kg available",
+                reason=f"Not enough materials to reach min weight. Need {weightNeeded:.0f}kg more, only {totalAvailableWeight:.0f}kg available in inventory",
                 fixedCost=fixedCost,
                 fixedWeight=fixedWeight,
             )
         
-        # Check 3: Can we spend enough to reach margin target?
+        # Check 3: Do we have enough BUDGET to buy materials to reach min weight?
+        # This is critical - materials may exist but we may not be able to afford them
+        remainingBudget = bounds.maxCost - fixedCost
+        
+        if weightNeeded > 0:
+            # Calculate minimum cost to add the weight needed
+            # Sort materials by cost-per-kg (cheapest first) to get best case
+            weightedMaterials = [
+                m for m in availableMaterials 
+                if m["weightPerUnit"] > 0 and m["unitPrice"] > 0
+            ]
+            weightedMaterials.sort(key=lambda m: m["unitPrice"] / m["weightPerUnit"])
+            
+            minCostToReachWeight = 0
+            weightStillNeeded = weightNeeded
+            
+            for m in weightedMaterials:
+                availableQty = max(0, m["availableQty"] - usedQty.get(m["id"], 0))
+                weightPerUnit = m["weightPerUnit"]
+                unitPrice = m["unitPrice"]
+                
+                if availableQty <= 0 or weightPerUnit <= 0:
+                    continue
+                
+                # How much of this material do we need?
+                qtyNeeded = weightStillNeeded / weightPerUnit
+                qtyToUse = min(qtyNeeded, availableQty)
+                
+                minCostToReachWeight += qtyToUse * unitPrice
+                weightStillNeeded -= qtyToUse * weightPerUnit
+                
+                if weightStillNeeded <= 0:
+                    break
+            
+            if minCostToReachWeight > remainingBudget:
+                return FeasibilityResult(
+                    feasible=False,
+                    bounds=bounds,
+                    reason=(
+                        f"Insufficient budget to reach weight target. "
+                        f"Fixed items cost {fixedCost:,.0f} VND, leaving only {remainingBudget:,.0f} VND. "
+                        f"Need {weightNeeded:,.0f}kg more which costs at least {minCostToReachWeight:,.0f} VND"
+                    ),
+                    fixedCost=fixedCost,
+                    fixedWeight=fixedWeight,
+                )
+        
+        # Check 4: Can we spend enough to reach margin target?
         costNeeded = bounds.minCost - fixedCost
         totalAvailableCost = sum(
             max(0, m["availableQty"] - usedQty.get(m["id"], 0)) * m["unitPrice"]
