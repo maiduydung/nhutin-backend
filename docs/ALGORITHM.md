@@ -1,574 +1,214 @@
-# Container Weight Optimization Algorithm
+# Container BOM Optimization Algorithm V2
 
-## Problem Classification
+## Problem Statement
 
-This is a **Constrained Multiple Knapsack Problem** variant with the following characteristics:
+Given a container specification and receipt price, optimize the Bill of Materials (BOM) to satisfy:
 
-- **Problem Type**: Multi-constraint optimization
-- **Algorithm**: Greedy heuristic with weight-to-cost ratio prioritization
-- **Complexity**: O(n log n + k × n) where n = number of items, k = iterations (typically < 10)
+1. **Physics Constraint**: Total weight must be within a range based on container length
+2. **Accounting Constraint**: Profit margin must be within a target range
 
-### Constraints
+These two constraints often conflict—the old algorithm optimized margin-first and hoped weight would align. This V2 algorithm fixes that with a **feasibility-first approach**.
 
-1. **Weight Constraint**: Total weight must be between 3000-6720 kg
-   - Base limit: 6000 kg
-   - Material loss factor: 12% (allows extra weight to compensate for processing losses)
-   - Effective max weight: 6000 × 1.12 ≈ 6720 kg
-   - **Container-adjusted**: For pre-built containers, effective max is reduced by container empty weight:
-     - Container 20ft (pre-built): 6720 - 1900 = **4820 kg** for materials
-     - Container 40ft (pre-built): 6720 - 2500 = **4220 kg** for materials
-     - Mooc Long / Thung Xe Tai: Full **6720 kg** (no pre-built container)
-2. **Budget Constraint**: Total cost ≤ 85% of receipt price (profit margin ≤ 15%)
-3. **Variety Constraint**: Must use multiple item types (never select only one type)
-4. **Availability Constraint**: Cannot exceed `final_quantity` from inventory records
-5. **Container Type Constraint**: Mooc Long and Thung Xe Tai never include container items in BOM
+## Golden Rule
 
-## Algorithm Overview
+> **Never optimize margin before weight feasibility is locked.**
 
-The optimizer uses a **two-phase greedy approach**:
+## 4-Phase Algorithm
 
-1. **Phase 1: Fixed Items** - Always included (no optimization needed)
-2. **Phase 2: Variable Items** - Greedy selection with ratio-based prioritization
+### Phase 0: Feasibility Check
 
-## Phase 1: Fixed Items Selection
+Derive hard bounds BEFORE attempting optimization. Fail early if constraints are impossible.
 
-These items are **always included** in every container configuration:
-
-### 1. Walking Floor Set
-- **Quantity**: Always 1 set
-- **Selection**: Based on `itemModelType` from user input
-  - `"R2DX"` → Select item with `type = "walking_floor_r2dx"` (weight: 751 kg)
-  - `"KSD"` → Select item with `type = "walking_floor_ksd"` (weight: 503 kg)
-  - `"KMD"` → Select item with `type = "walking_floor_kmd"` (weight: 502 kg)
-- **Weight**: Retrieved from `config.WALKING_FLOORS` dictionary
-- **Cost**: `unitPrice × 1` (unitPrice from latest inventory record)
-
-### 2. Aluminum Bars
-- **Quantity**: Calculated dynamically based on `slatType` and `thickness`
-- **Weight Formula**: `containerLength × density_kg_per_m × bars_per_container`
-- **Selection Logic**:
-  1. Look up `aluminum_bar_constants` table using both `slatType` (97mm or 112mm) AND `thickness` (6mm or 8mm)
-  2. Query returns exact match for size_mm and thickness_mm
-  3. If no exact match, falls back to any available thickness for that size
-- **Cost**: Uses `unitPrice` from aluminum inventory item
-- **Note**: Quantity in kg equals the calculated weight
-
-### 3. Hydraulic Pump
-- **Quantity**: Always 1 unit
-- **Selection**: Based on `itemModelType` from user input
-  - `"R2DX"` → Select **130cc** pump
-  - `"KSD"`, `"KMD"`, or others → Select **108cc** pump
-- **Weight**: Approximately 50 kg per pump
-- **Query**: Searches `hydraulic_pump` type for pump size in name/code (e.g., "130cc")
-- **Fallback**: If specific size not found, uses any available hydraulic pump
-
-### 4. Hydraulic Oil
-- **Quantity**: Full barrel (180-209L range, using 200L standard)
-- **Weight**: ~200 kg per barrel (176kg oil + 24kg drum)
-  - Oil density: 0.88 kg/L (ISO VG 68)
-  - Oil weight: 200L × 0.88 = ~176 kg
-  - Drum weight: ~15-24 kg
-- **Selection**: Searches for items matching:
-  - Name containing "dầu thủy lực" (hydraulic oil)
-  - Name containing "hydraulic oil"
-  - Type `burning_fuel` with "dầu" (oil) in name
-- **Fallback**: Any available fuel/oil with sufficient quantity (≥200L)
-
-**Aluminum Bar Constants Table:**
-| size_mm | thickness_mm | density_kg_per_m | bars_per_container |
-|---------|--------------|------------------|-------------------|
-| 97      | 6            | 2.313            | 24                |
-| 112     | 6            | 2.529            | 21                |
-| 112     | 8            | 3.313            | 21                |
-
-**Example Calculations (40ft container, 12.192m):**
-- 97mm/6mm: 12.192 × 2.313 × 24 = **676.77 kg**
-- 112mm/6mm: 12.192 × 2.529 × 21 = **647.29 kg**
-- 112mm/8mm: 12.192 × 3.313 × 21 = **848.12 kg**
-
-## Phase 2: Variable Items Optimization
-
-### Supported Variable Item Types
 ```python
-variableTypes = [
-    'steel_box', 'steel_i', 'steel_square', 'steel_u', 'steel_pipe', 'steel_plate',
-    'galvanized_sheet', 'stainless_steel', 'container'
+# Weight bounds (from container length)
+targetWeight = interpolate(containerLength)  # 6m→3500, 9m→4500, 12m→7000, 15m→8000
+minWeight = targetWeight - 500
+maxWeight = targetWeight + 500
+
+# Cost bounds (from receipt price and margin)
+targetCost = receiptPrice × (1 - targetMargin)
+maxCost = receiptPrice × (1 - minMargin)  # Maximum we can spend
+minCost = receiptPrice × (1 - maxMargin)  # Minimum we must spend
+```
+
+**Early Failure Checks:**
+- Fixed items exceed weight limit → impossible build
+- Fixed items exceed budget → impossible margin
+- Not enough materials to reach weight → insufficient inventory
+
+### Phase 1: Fixed Items (Deterministic)
+
+Always included, no optimization:
+
+| Item | Selection Logic | Weight |
+|------|-----------------|--------|
+| Walking Floor | Based on `itemModelType` (R2DX/KSD/KMD) | 503-751 kg |
+| Aluminum Bars | Formula: `length × density × bars` | ~650-850 kg |
+| Hydraulic Pump | R2DX→130cc, Others→108cc | ~50 kg |
+| Hydraulic Oil | 1 barrel (200L) | ~200 kg |
+
+**Container Handling:**
+- `container_20ft/40ft`: Use pre-built if available, else build from materials
+- `mooc_long/thung_xe_tai`: Always build structure from raw materials
+
+### Phase 2: Weight-First Filling
+
+Fill materials to reach **minimum weight** using structural priority:
+
+```python
+PRIORITY_ORDER = [
+    "steel_box",      # Structural frame
+    "steel_u",        # Beams
+    "steel_i",        # I-beams
+    "galvanized_sheet",  # Walls/roof
+    "stainless_steel",   # Accessories
+    "aluminum",       # Additional weight
 ]
+
+while totalWeight < minWeight:
+    add next structural item (bounded by availability)
 ```
-**Note**: `hydraulic_pump` and `burning_fuel` (hydraulic oil) are now **fixed items** (always included in BOM), not variable items.
 
-**Container Type Filtering**: The `container` type is automatically filtered out for `mooc_long` and `thung_xe_tai` container types. These types only use raw materials (steel, galvanized sheets, aluminum) to build the structure - they never include a pre-built container item.
+**Key Insight:** At the end of Phase 2, weight is guaranteed within window. Margin may be off—this is fine.
 
-### Step 1: Separate Items by Weight Contribution
-Items are separated into two categories:
-1. **Weight-contributing items**: Items where `weightPerUnit > 0` (steel, galvanized sheets)
-2. **Zero-weight items**: Items where `weightPerUnit = 0` (containers - they're packaging, not cargo)
+### Phase 3: Margin Tuning
+
+Add expensive/light items to increase cost and hit target margin:
 
 ```python
-zeroWeightItems = []   # e.g., containers
-weightItems = []       # e.g., steel, galvanized sheets
+# Sort items by cost-to-weight ratio (highest first)
+sortedItems = sorted(items, key=lambda x: x.unitPrice / x.weightPerUnit, reverse=True)
+
+while profitMargin > targetMargin:
+    add item with highest cost-per-kg
+    stop if totalWeight > maxWeight
 ```
 
-### Step 2: Select Weight-Contributing Items (by type for variety)
-For each item type with weight > 0:
-1. Calculate weight-to-cost ratio for all items: `ratio = weight_per_unit / unit_price`
-2. Select item with **highest ratio** (most efficient: kg per VND)
-3. Calculate maximum quantity:
-   ```python
-   weightSpaceLeft = MAX_WEIGHT - currentTotalWeight
-   maxWeightQuantity = weightSpaceLeft / weightPerUnit
-   maxBudgetQuantity = (maxCost - currentCost) / unitPrice
-   maxQuantity = min(availableQuantity, maxWeightQuantity, maxBudgetQuantity)
-   ```
-4. Take **maximum possible quantity** (greedy approach)
-5. Add to selected items
+**Best Items for Margin Tuning:**
+- Aluminum: 123,000-132,000 VND/kg
+- Stainless Steel: 45,000-50,000 VND/kg
+- Zero-weight items (containers, rivets): Add cost without weight
 
-### Step 3: Add Zero-Weight Items to Fill Budget
-After selecting weight-contributing items, add zero-weight items (like containers) to fill remaining budget:
+### Phase 4: Micro-Adjust (Swap Optimization)
+
+If we hit weight limit before reaching target cost, swap cheap/heavy items for expensive/light ones:
 
 ```python
-for item in zeroWeightItems:
-    if currentCost >= maxCost:
-        break
-    budgetRemaining = maxCost - currentCost
-    maxQty = min(item["availableQuantity"], int(budgetRemaining / item["unitPrice"]))
-    if maxQty > 0:
-        selectedItems.append(item)
-        currentCost += item["unitPrice"] * maxQty
+while costGap > 1M and iterations < 50:
+    find cheapest item by VND/kg in current selection
+    find most expensive item by VND/kg in available inventory
+    swap equal weight: remove cheap, add expensive
+    # Result: same weight, higher cost
 ```
 
-This ensures expensive items that don't add weight (like container shells) are used to fill the budget gap and reduce profit margin.
+**Example:**
+- Remove 100kg steel @ 15,000 VND/kg = 1.5M VND
+- Add 100kg aluminum @ 123,000 VND/kg = 12.3M VND
+- Net: +10.8M VND cost, 0kg weight change
 
-### Step 4: Fill Remaining Weight
-Iteratively fill remaining weight capacity:
+## Weight Targets by Container Length
 
-1. **Sort all weight-contributing items** by weight-to-cost ratio (descending)
-2. **For each item** (best ratio first):
-   - Check if already selected (can add more quantity)
-   - Calculate how much more can be added
-   - Take maximum possible (respecting weight, budget, availability)
-   - Update selected items
-3. **Continue until**:
-   - Weight reaches MAX_WEIGHT (~6720kg with material loss factor), OR
-   - Budget exhausted (cost ≥ maxCost), OR
-   - No more items can be added
-4. **If profit margin still too high** (> 15%):
-   - Add more materials to fill remaining budget
-   - Priority: aluminum first, then steel, then others
+| Length | Target Weight | Min Weight | Max Weight |
+|--------|---------------|------------|------------|
+| 6m | 3,500 kg | 3,000 kg | 4,000 kg |
+| 9m | 4,500 kg | 4,000 kg | 5,000 kg |
+| 12m | 7,000 kg | 6,500 kg | 7,500 kg |
+| 15m | 8,000 kg | 7,500 kg | 8,500 kg |
 
-### Step 5: Iteration Loop
-The algorithm uses a **while loop** (max 20 iterations) to ensure all items are considered:
-- Recalculates `currentTotalWeight` and `currentCost` each iteration
-- Stops when no progress made (weight and cost unchanged)
+Intermediate lengths use linear interpolation.
 
-## Weight Calculation Methods
+## Margin Bounds
 
-### 1. Walking Floor Sets (`unit = "set"`)
-```python
-weight = WALKING_FLOORS[itemModelType]["weight"] × quantity
-```
-- R2DX: 751 kg per set
-- KSD: 503 kg per set
-- KMD: 502 kg per set
+- **Target Margin**: User-specified (default 20%)
+- **Max Margin**: Target margin + 0.5% tolerance
+- **Min Margin**: Target margin - 5% (breathing room)
 
-### 2. Aluminum Bars
-```python
-weight = containerLength × density_kg_per_m × bars_per_container
-```
-- Density and bars from `aluminum_bar_constants` table
-- Selected based on `slatType` (97mm or 112mm) AND `thickness` (6mm or 8mm)
+Example for 20% target:
+- Acceptable range: 15% - 20.5%
 
-### 3. Steel Items (`unit = "kg"`)
-```python
-weight = quantity  # Quantity is already in kilograms
-```
-- Applies to: `steel_box`, `steel_i`, `steel_square`, `steel_u`, `steel_pipe`, `steel_plate`, `stainless_steel`
+## Why This Works
 
-### 4. Galvanized Sheets (`unit = "m"`)
-```python
-weight_per_meter = thickness_mm × width_mm × 7850 / 1,000,000
-weight = quantity × weight_per_meter
-```
-- Dimensions extracted from item name using regex: `(\d+\.?\d*)\s*x\s*(\d+)`
-- Example: "Tôn mạ kẽm 0.95 x 1200" → 0.95mm × 1200mm × 7850 / 1,000,000 = 8.9445 kg/m
-- Density of galvanized steel: 7850 kg/m³
+| Old Algorithm | New Algorithm (V2) |
+|---------------|-------------------|
+| Greedy on ratio | Feasibility → Tuning |
+| Margin-driven | Weight-driven |
+| Breaks silently | Fails loudly with explanation |
+| Hard to explain | Tax/CFO explainable |
 
-### 5. Containers (`unit = "set"`)
-```python
-weight = 0  # Containers don't count toward weight constraint
-```
-- **Important**: Container weight is set to 0 because it's the packaging, not cargo
-- The weight constraint (3000-6000kg) applies to cargo that goes INTO the container
-- Containers are high-value items used to fill budget and reduce profit margin
+**Philosophy:**
+> "First make it physically real, then make it financially optimal"
 
-### 6. Hydraulic Pumps (`unit = "cái" or "pcs"`)
-```python
-weight = quantity × 50  # Approximately 50 kg per unit
-```
+This matches how real logistics + accounting works.
 
-## Profit Margin Calculation
-
-```python
-totalCost = sum(item["quantity"] × item["unitPrice"] for all items)
-profit = receiptPrice - totalCost
-profitMargin = (profit / receiptPrice) × 100%
-```
-
-**Constraint**: `profitMargin ≤ 15%` (equivalent to `totalCost ≤ receiptPrice × 0.85`)
-
-### Material Loss Factor
-
-Due to material processing losses (cutting, shaping, waste), the algorithm allows extra weight:
-
-```python
-BASE_MAX_WEIGHT = 6000  # kg (target cargo weight)
-MATERIAL_LOSS_FACTOR = 0.12  # 12% loss during processing
-MAX_WEIGHT = BASE_MAX_WEIGHT × (1 + MATERIAL_LOSS_FACTOR)  # ~6720 kg
-```
-
-This means:
-- Base cargo weight target: 6000 kg
-- With 12% material loss factor: can add up to 6720 kg of materials
-- After processing, expect ~6000 kg of usable cargo
-
-## Algorithm Pseudocode
+## Service Architecture
 
 ```
-function optimize(containerLength, itemModelType, slatType, thickness, receiptPrice):
-    // Phase 1: Fixed Items
-    walkingFloor = getWalkingFloor(itemModelType)  // 1 set
-    aluminumWeight = calculateAluminumWeight(containerLength, slatType, thickness)
-    aluminumItem = getAluminumItem(aluminumWeight)
-    hydraulicPump = getHydraulicPump(itemModelType)  // 130cc for R2DX, 108cc for others
-    hydraulicOil = getHydraulicOil()  // 200L barrel (~200kg)
-    
-    fixedWeight = walkingFloor.weight + aluminumWeight + hydraulicPump.weight + hydraulicOil.weight
-    fixedCost = walkingFloor.cost + aluminumItem.cost + hydraulicPump.cost + hydraulicOil.cost
-    maxCost = receiptPrice × 0.85  // 15% profit margin
-    
-    // Phase 2: Variable Items
-    variableItems = getVariableItems()  // All variable types including container
-    selectedItems = []
-    currentWeight = fixedWeight
-    currentCost = fixedCost
-    
-    // Separate by weight contribution
-    zeroWeightItems = items where weightPerUnit == 0  // containers
-    weightItems = items where weightPerUnit > 0       // steel, sheets
-    
-    // Step 1: Select weight-contributing items by type for variety
-    itemsByType = groupByType(weightItems)
-    for each type in itemsByType:
-        bestItem = item with highest (weightPerUnit / unitPrice)
-        maxQty = min(availableQty, weightSpaceLeft, budgetLeft)
-        addItem(bestItem, maxQty)
-    
-    // Step 2: Add zero-weight items to fill budget (reduces profit margin)
-    for each item in zeroWeightItems:
-        if currentCost >= maxCost: break
-        budgetLeft = maxCost - currentCost
-        maxQty = min(availableQty, budgetLeft / unitPrice)
-        addItem(item, maxQty)
-    
-    // Step 3: Fill remaining weight with best-ratio items
-    sort weightItems by (weightPerUnit / unitPrice) descending
-    
-    while currentWeight < MAX_WEIGHT and currentCost < maxCost:
-        for each item in sortedItems:
-            if canAddMore(item):
-                maxQty = calculateMaxQuantity(item)
-                addItem(item, maxQty)
-                break
-        if noProgress:
-            break
-    
-    return selectedItems
+services/
+├── optimizer.py           # Main orchestrator (OptimizerV2)
+├── feasibility_checker.py # Phase 0: Bounds & validation
+├── fixed_items.py         # Phase 1: Core items
+├── weight_filler.py       # Phase 2: Fill to minWeight
+├── margin_tuner.py        # Phase 3: Tune cost to margin
+├── micro_adjuster.py      # Phase 4: Swap cheap↔expensive
+├── container_builder.py   # Build container from materials
+├── weight_calculator.py   # Item weight calculations
+└── database.py            # PostgreSQL wrapper
 ```
 
-## Why Greedy Algorithm?
+## Example Optimization
 
-### Advantages
-- **Fast**: O(n log n) for sorting + O(n) iterations
-- **Simple**: Easy to understand and maintain
-- **Practical**: Works well for this use case
-- **Real-time**: Suitable for API responses
+**Input:**
+- Container: mooc_long, 15m
+- Receipt: 700,000,000 VND
+- Target Margin: 20%
 
-### Disadvantages
-- **Not Optimal**: Doesn't guarantee the best solution
-- **Local Optima**: May get stuck in suboptimal solutions
-- **No Backtracking**: Can't undo decisions
+**Phase 0 - Bounds:**
+- Weight: 7,500-8,500 kg
+- Cost: 560M-595M VND
+- Margin: 15-20%
 
-### Why Not Other Algorithms?
+**Phase 1 - Fixed Items:**
+- Walking floor (KSD): 503 kg, 157M VND
+- Aluminum bars: 797 kg, 105M VND
+- Hydraulic pump: 50 kg, 12M VND
+- Hydraulic oil: 200 kg, 9M VND
+- Container structure: 2,819 kg, 139M VND
+- **Total: 4,368 kg, 422M VND**
 
-1. **Dynamic Programming**: Optimal but O(n × W × B) complexity - too slow for real-time API
-2. **Integer Linear Programming**: Optimal but requires solver library, more complex
-3. **Genetic Algorithms**: Can find better solutions but much slower and more complex
-4. **Branch and Bound**: Optimal but exponential worst-case complexity
+**Phase 2 - Weight Filling:**
+- Add steel box, U-steel, galvanized sheets
+- **Total: 7,500 kg, 526M VND** ✅ Weight target achieved!
 
-For this use case, **greedy is the right choice** because:
-- Solution quality is sufficient (fills weight range effectively)
-- Speed is important (API response time)
-- Multiple constraints make exact optimization complex
-- Real-world inventory constraints make perfect optimization less critical
+**Phase 3 - Margin Tuning:**
+- Add rivets (zero-weight, low cost)
+- **Total: 7,500 kg, 527M VND**
 
-## Key Implementation Details
+**Phase 4 - Micro-Adjust:**
+- Swap 300kg steel → aluminum
+- **Final: 7,500 kg, 559M VND, 20.1% margin** ✅ ✅
 
-### Unit Price Retrieval
-**CRITICAL**: Always read `row[7]` (unit_price) from SQL query, NOT `row[6]` (final_value)
-```python
-# SQL returns: id, code, name, unit, type, final_quantity, final_value, unit_price
-unitPrice = float(row[7])  # ✅ Correct
-unitPrice = float(row[6])  # ❌ Wrong (this is total value, not per unit)
-```
+## Error Handling
 
-### Weight-to-Cost Ratio
-```python
-ratio = weightPerUnit / unitPrice  # kg per VND
-```
-Higher ratio = more weight per VND spent = better efficiency
+The algorithm provides clear failure reasons:
 
-### Maximum Quantity Calculation
-```python
-maxWeightQuantity = int((MAX_WEIGHT - currentTotalWeight) / weightPerUnit)
-maxBudgetQuantity = int((maxCost - currentCost) / unitPrice)
-maxQuantity = min(availableQuantity, maxWeightQuantity, maxBudgetQuantity)
-```
-
-### Iteration Stopping Condition
-```python
-if currentTotalWeight == previousWeight and currentCost == previousCost:
-    break  # No progress made, stop iterating
-```
-
-## Example Walkthrough
-
-**Input**:
-- `containerLength`: 12.192 m
-- `itemModelType`: "R2DX"
-- `slatType`: "97mm"
-- `thickness`: 6 (mm)
-- `receiptPrice`: 600,000,000 VND
-
-**Phase 1**:
-- Walking floor: R2DX set (751 kg, 248,802,602 VND)
-- Aluminum (97mm/6mm): 12.192 × 2.313 × 24 = 676.8 kg (83,540,339 VND)
-- Fixed total: 1427.8 kg, 332,342,941 VND
-
-**Phase 2**:
-- Available budget: 450,000,000 - 332,342,941 = 117,657,059 VND
-- Available weight: 6000 - 1427.8 = 4572.2 kg
-- Select items by ratio:
-  1. `thephop`: 1 kg / 16,640 VND = 0.0000601 ratio → 483 kg
-  2. `THÉP_HỘP_KẼM`: 1 kg / 16,561 VND = 0.0000604 ratio → 249 kg
-  3. `Tôn_mạ_kẽm_1.50x1250`: 14.72 kg / 236,364 VND = 0.0000623 ratio → 54 m (794.81 kg)
-  4. Continue until weight/budget exhausted...
-
-**Result**: ~3625 kg total weight, within 3000-6000 kg range
-
-## Aluminum Boost for Weight
-
-When total weight is below MIN_WEIGHT (3000 kg) after optimization, the algorithm automatically adds more aluminum bars:
-
-```python
-if totalWeight < MIN_WEIGHT:
-    weightNeeded = MIN_WEIGHT - totalWeight
-    additionalAluminum = min(weightNeeded, availableInventory, maxAffordable)
-    aluminumItem["quantity"] += additionalAluminum
-```
-
-**Key insight**: Adding aluminum INCREASES cost which DECREASES profit margin. So boosting aluminum achieves both:
-1. Increases weight toward MIN_WEIGHT target
-2. Reduces profit margin (more efficient use of receipt price)
-
-**Example**:
-- Before boost: 2,564 kg, 25.00% margin
-- After boost: 3,000 kg, 10.06% margin (added 436 kg aluminum)
-
-## Container Validation and Fallback
-
-The optimizer validates the requested container type against available inventory:
-
-```python
-if requestedContainer not in database:
-    logger.error(f"Requested {size}ft container not found. Using fallback.")
-    return availableContainers[0]  # Use any available container
-```
-
-**Example**:
-- Request: `container_40ft` (not in DB)
-- Error logged: "Requested 40ft container not found. Available: ['20ft']"
-- Fallback: Uses "Vỏ container 20 feet đã qua sử dụng"
-
-## Container Type Handling
-
-The system supports 4 distinct container types with different BOM (Bill of Materials) behavior:
-
-### Supported Container Types
-
-| Container Type | Internal Value | Default Length | Container in BOM | Pre-built Weight |
-|----------------|---------------|----------------|------------------|------------------|
-| Container 20ft | `container_20ft` | 6.096 m | ✅ Yes | 1,900 kg |
-| Container 40ft | `container_40ft` | 12.192 m | ✅ Yes | 2,500 kg |
-| Mooc Long | `mooc_long` | 15.0 m | ❌ No | N/A |
-| Thung Xe Tai | `thung_xe_tai` | 15.0 m | ❌ No | N/A |
-
-### Container Item Inclusion Logic
-
-```python
-def _shouldIncludeContainerItem(containerType: str) -> bool:
-    """
-    Container 20ft/40ft: Include container item (pre-built or built from materials)
-    Mooc Long/Thung Xe Tai: NEVER include container item - only build structure
-    """
-    return containerType in ["container_20ft", "container_40ft"]
-```
-
-### Effective Max Weight Calculation
-
-The system calculates effective maximum weight for materials based on container type:
-
-```python
-def _getEffectiveMaxWeight(containerType: str, containerBuiltFromMaterials: bool) -> float:
-    """
-    MAX_WEIGHT = 6720 kg (base 6000 kg + 12% material loss factor)
-    
-    For pre-built containers (20ft/40ft):
-        effectiveMax = MAX_WEIGHT - containerEmptyWeight
-        - 20ft: 6720 - 1900 = 4820 kg
-        - 40ft: 6720 - 2500 = 4220 kg
-    
-    For built containers or mooc_long/thung_xe_tai:
-        effectiveMax = MAX_WEIGHT = 6720 kg (full capacity for materials)
-    """
-    if containerType in CONTAINER_TYPES_WITH_CONTAINER and not containerBuiltFromMaterials:
-        return MAX_WEIGHT - CONTAINER_EMPTY_WEIGHTS[containerType]
-    return MAX_WEIGHT
-```
-
-### Weight Constraint Summary
-
-| Scenario | Container Weight | Effective Max Materials |
-|----------|-----------------|------------------------|
-| Container 20ft (pre-built) | 1,900 kg | 4,820 kg |
-| Container 20ft (built from materials) | 0 kg | 6,720 kg |
-| Container 40ft (pre-built) | 2,500 kg | 4,220 kg |
-| Container 40ft (built from materials) | 0 kg | 6,720 kg |
-| Mooc Long | 0 kg | 6,720 kg |
-| Thung Xe Tai | 0 kg | 6,720 kg |
-
-### Material Scaling for Mooc Long / Thung Xe Tai
-
-For non-container types (mooc_long, thung_xe_tai), materials scale proportionally based on length using the 40ft container specs as baseline:
-
-```python
-BASELINE_LENGTH = 12.192  # 40ft container in meters
-
-def getScaledMaterials(containerLength: float) -> dict:
-    scaleFactor = containerLength / BASELINE_LENGTH
-    return {
-        "steel_frame_kg": 983 * scaleFactor,      # Base: 983 kg for 40ft
-        "galvanized_sheet_m": 100 * scaleFactor,  # Base: 100 m for 40ft
-    }
-
-# Example: 15m Mooc Long
-# scaleFactor = 15.0 / 12.192 = 1.23
-# steel_frame_kg = 983 × 1.23 ≈ 1,209 kg
-# galvanized_sheet_m = 100 × 1.23 ≈ 123 m
-```
-
-**Aluminum bars** are calculated dynamically from the `aluminum_bar_constants` table:
-```python
-aluminum_weight = containerLength × density_kg_per_m × bars_per_container
-```
-
----
-
-## Container Building from Materials
-
-When the requested container type (20ft or 40ft) is not available in inventory, the optimizer automatically builds a container from raw materials.
-
-### Container Building Specifications
-
-Based on **THUYETMINHKYTHUAT.pdf** - Walking Floor S-Drive KSD 4.25" system:
-
-```python
-CONTAINER_BUILD_SPECS = {
-    "20ft": {
-        "length_m": 6.096,
-        "steel_frame_kg": 492,
-        "galvanized_sheet_m": 50,
-    },
-    "40ft": {
-        "length_m": 12.192,
-        "steel_frame_kg": 983,    # Combined: 332.34 + 398.48 + 252.41 kg
-        "galvanized_sheet_m": 100,
-    },
-}
-```
-
-**Note**: Aluminum is calculated dynamically based on `slatType` and `thickness` (not fixed values).
-The formula `containerLength × density_kg_per_m × bars_per_container` is applied using values from `aluminum_bar_constants` table.
-
-**40ft Material Breakdown (from technical document):**
-
-| Material | Weight | Description |
-|----------|--------|-------------|
-| Nhôm thanh #000 | 756.76 kg | 25 bars × 12m × 2.53 kg/m (21 for slats + 4 accessories) |
-| Sắt hộp vuông kẽm | 332.34 kg | ~55m hộp 80×40 or 100×50 (main beams) |
-| Thép vuông kẽm | 398.48 kg | ~124m thép 40×40mm (cross bracing) |
-| Thép vuông mạ kẽm | 252.41 kg | ~84m thép 30-40×40mm (frame accessories) |
-```
-
-### Building Process
-
-1. **Check Container Availability**:
-   - Parse container type from request (e.g., "container_40ft" → "40ft")
-   - Check if matching container exists in variable items
-   - If not found, trigger container building
-
-2. **Material Gathering**:
-   - Steel: Collected from any steel type (steel_box, steel_i, etc.)
-   - Galvanized sheets: Collected with weight calculation
-   - Aluminum: Collected from aluminum inventory
-
-3. **Constraints**:
-   - Materials must be at least 90% of required quantity
-   - Building cost must fit within remaining budget
-   - Building weight must fit within remaining weight capacity
-   - Scaled building allowed if constraints tight (minimum 50%)
-
-4. **Response**:
-   - `containerBuiltFromMaterials: true` indicates container was built
-   - Built materials appear in items list with `forContainerBuild: true` flag
-
-### Example: Building 40ft Container
-
-```python
-# Request: container_40ft (not in inventory)
-# Response includes:
+```json
 {
-    "containerBuiltFromMaterials": true,
-    "items": [
-        # ... fixed items (walking floor, aluminum bars) ...
-        {"code": "thephop", "quantity": 1500, "weight": 1500, "forContainerBuild": true},
-        {"code": "ton_ma_kem", "quantity": 100, "weight": 894.5, "forContainerBuild": true},
-        {"code": "nhom_thanh", "quantity": 200, "weight": 200, "forContainerBuild": true},
-    ]
+  "status": "error",
+  "error": "Fixed items (349,909,234) exceed max budget (297,500,000)",
+  "constraints": {
+    "weightOk": true,
+    "marginOk": false
+  }
 }
 ```
 
-## Future Improvements
-
-1. **Multi-objective Optimization**: Balance weight, cost, and variety more intelligently
-2. **Backtracking**: Allow undoing selections if better combination found
-3. **Multiple Solutions**: Generate top-N solutions for user to choose
-4. **Weight Tolerance Configuration**: Make 3000-6000kg range configurable
-5. **Item Priority Weights**: Allow certain items to be prioritized over others
-6. **Caching**: Cache weight calculations for frequently used items
+Common failure modes:
+1. **Budget too low**: Fixed items alone exceed budget for target margin
+2. **Inventory insufficient**: Not enough materials to reach weight target
+3. **Conflicting constraints**: Weight limit reached before cost target (reported as warning, provides best-effort result)
 
 ## References
 
-- **Knapsack Problem**: https://en.wikipedia.org/wiki/Knapsack_problem
-- **Greedy Algorithm**: https://en.wikipedia.org/wiki/Greedy_algorithm
-- **Bin Packing Problem**: https://en.wikipedia.org/wiki/Bin_packing_problem
-
+- [docs/comments.md](comments.md) - Original analysis and algorithm design
+- [CHANGELOG.md](../CHANGELOG.md) - Version history
+- [Knapsack Problem](https://en.wikipedia.org/wiki/Knapsack_problem) - Related optimization problem

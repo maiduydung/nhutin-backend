@@ -115,5 +115,9 @@ class WeightCalculator:
         if itemType == "hydraulic_pump":
             return quantity * HYDRAULIC_PUMP_WEIGHT_KG
         
+        # Items sold by pieces (Con, pcs, cái) - typically light accessories
+        if unit in ["Con", "pcs", "cái"]:
+            return 0.0  # Don't count towards weight
+        
         # Default: treat as kg if unknown
-        return quantity if unit in ["kg", "pcs", "cái", "Con"] else 0.0
+        return quantity if unit == "kg" else 0.0

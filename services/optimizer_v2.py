@@ -7,7 +7,6 @@ Phases:
 1. Fixed Items - Walking floor, aluminum, pump, oil (deterministic)
 2. Weight Filling - Reach minWeight with structural materials
 3. Margin Tuning - Add expensive/light items to hit target margin
-4. Micro-Adjust - Swap cheap/heavy for expensive/light to fine-tune margin
 """
 from typing import Any
 from services.database import Database
@@ -16,7 +15,6 @@ from services.container_builder import ContainerBuilder
 from services.feasibility_checker import FeasibilityChecker, OptimizationBounds
 from services.weight_filler import WeightFiller
 from services.margin_tuner import MarginTuner
-from services.micro_adjuster import MicroAdjuster
 from config import (
     logger,
     CONTAINER_TYPES_WITHOUT_CONTAINER,
@@ -38,7 +36,6 @@ class OptimizerV2:
         self.containerBuilder = ContainerBuilder(db)
         self.weightFiller = WeightFiller(db)
         self.marginTuner = MarginTuner(db)
-        self.microAdjuster = MicroAdjuster()
 
     def optimize(
         self,
@@ -149,15 +146,13 @@ class OptimizerV2:
         # ─────────────────────────────────────────────────────────────
         # Check feasibility with fixed items
         # ─────────────────────────────────────────────────────────────
-        # Don't exclude types, only exclude specific IDs that were fully used
-        # Pass usedQty to let weight filler account for partially used inventory
         materials = self.weightFiller.getAvailableMaterials(
-            excludeIds=set(),  # Don't exclude any IDs - use usedQty instead
-            excludeTypes=None,
+            excludeIds=excludeIds,
+            excludeTypes={"galvanized_sheet", "steel_box"} if containerBuilt else None,
         )
         
         feasibility = self.feasibilityChecker.checkFeasibility(
-            bounds, currentCost, currentWeight, materials, usedQty
+            bounds, currentCost, currentWeight, materials
         )
         
         if not feasibility.feasible:
@@ -206,29 +201,6 @@ class OptimizerV2:
         allItems.extend(marginItems)
         
         logger.info(f"After Phase 3: weight={currentWeight:.0f}kg, cost={currentCost:,.0f}")
-        
-        # ─────────────────────────────────────────────────────────────
-        # PHASE 4: Micro-adjust (swap cheap/heavy for expensive/light)
-        # ─────────────────────────────────────────────────────────────
-        costGap = bounds.targetCost - currentCost
-        # Trigger Phase 4 if we still need significant cost and weight is near max
-        if costGap > 1_000_000 and currentWeight >= bounds.minWeight:
-            logger.info("Phase 4: Micro-adjusting (at weight limit, need more cost)")
-            
-            # Get all available items for swapping
-            allAvailable = self.marginTuner.getTuningItems(containerType, set())
-            
-            allItems, currentWeight, currentCost = self.microAdjuster.adjustForMargin(
-                currentItems=allItems,
-                availableItems=allAvailable,
-                targetCost=bounds.targetCost,
-                currentCost=currentCost,
-                maxWeight=bounds.maxWeight,
-                currentWeight=currentWeight,
-                usedQty=usedQty,
-            )
-            
-            logger.info(f"After Phase 4: weight={currentWeight:.0f}kg, cost={currentCost:,.0f}")
         
         # ─────────────────────────────────────────────────────────────
         # Build final result
@@ -292,10 +264,9 @@ class OptimizerV2:
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
         
-        # Check if within bounds (with 0.5% tolerance for margin)
-        marginTolerance = 0.5
+        # Check if within bounds
         weightOk = bounds.minWeight <= totalWeight <= bounds.maxWeight
-        marginOk = (bounds.minMargin * 100 - marginTolerance) <= profitMargin <= (bounds.maxMargin * 100 + marginTolerance)
+        marginOk = bounds.minMargin * 100 <= profitMargin <= bounds.maxMargin * 100
         
         status = "ok" if weightOk and marginOk and not error else "warning"
         if error:

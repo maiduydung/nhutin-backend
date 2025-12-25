@@ -4,11 +4,15 @@ Azure Functions backend for optimizing container Bill of Materials (BOM) with pr
 
 ## What It Does
 
-Given a container specification and receipt price, the optimizer:
-1. **Hits target profit margin** (default 20%) by spending the right amount
-2. **Maximizes weight** within container-length-based limits
-3. **Always includes core items**: Walking floor, aluminum bars, hydraulic pump, hydraulic oil
-4. **Builds containers from materials** when pre-built ones unavailable
+Given a container specification and receipt price, the optimizer uses a **4-phase algorithm**:
+
+1. **Phase 0 - Feasibility Check**: Derive bounds, fail early if impossible
+2. **Phase 1 - Fixed Items**: Walking floor, aluminum bars, pump, oil (deterministic)
+3. **Phase 2 - Weight Filling**: Reach minimum weight with structural materials
+4. **Phase 3 - Margin Tuning**: Add expensive items to hit target margin
+5. **Phase 4 - Micro-Adjust**: Swap cheap/heavy for expensive/light if needed
+
+**Golden Rule**: Never optimize margin before weight feasibility is locked.
 
 ## Weight Targets (by Container Length)
 
@@ -69,11 +73,13 @@ Intermediate lengths are linearly interpolated.
 ├── models/
 │   └── user_input.py         # Request validation
 ├── services/
-│   ├── optimizer.py          # Main orchestrator
-│   ├── fixed_items.py        # Core items (floor, pump, oil, aluminum)
-│   ├── variable_filler.py    # Fill to budget with variable items
+│   ├── optimizer.py          # Main orchestrator (OptimizerV2)
+│   ├── feasibility_checker.py # Phase 0: Bounds & validation
+│   ├── fixed_items.py        # Phase 1: Core items
+│   ├── weight_filler.py      # Phase 2: Fill to minWeight
+│   ├── margin_tuner.py       # Phase 3: Tune cost to margin
+│   ├── micro_adjuster.py     # Phase 4: Swap cheap↔expensive
 │   ├── container_builder.py  # Build container from materials
-│   ├── weight_targets.py     # Length → weight interpolation
 │   ├── weight_calculator.py  # Item weight calculations
 │   └── database.py           # PostgreSQL wrapper
 └── tests/
@@ -106,7 +112,10 @@ func start
 
 ## How Optimization Works
 
-1. **Fixed items** are always included (walking floor, aluminum, pump, oil)
-2. **Container** is either from inventory or built from materials
-3. **Variable items** fill remaining budget to hit profit margin
-4. Items prioritized by **weight-to-cost ratio** (max weight per VND)
+1. **Phase 0**: Check if constraints are achievable (fail early if not)
+2. **Phase 1**: Add fixed items (walking floor, aluminum, pump, oil, container)
+3. **Phase 2**: Fill to minimum weight using structural materials (steel, sheets)
+4. **Phase 3**: Add expensive items (aluminum, stainless) to hit margin target
+5. **Phase 4**: Swap cheap/heavy items for expensive/light if at weight limit
+
+**Key Insight**: Weight is locked first, then margin is optimized within weight constraints.

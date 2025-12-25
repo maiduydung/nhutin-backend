@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-12-25
+
+### Changed - **BREAKING**: Complete Algorithm Rewrite
+
+#### 4-Phase Constrained Feasibility Algorithm
+The optimizer has been completely rewritten to use a 4-phase approach that prioritizes weight feasibility over margin optimization.
+
+**Golden Rule**: Never optimize margin before weight feasibility is locked.
+
+| Phase | Purpose | What It Does |
+|-------|---------|--------------|
+| 0 | Feasibility | Derive bounds, fail early if impossible |
+| 1 | Fixed Items | Walking floor, aluminum, pump, oil (deterministic) |
+| 2 | Weight Filling | Reach minWeight with structural materials |
+| 3 | Margin Tuning | Add expensive/light items to hit margin |
+| 4 | Micro-Adjust | Swap cheap/heavy for expensive/light |
+
+#### Why This Was Needed
+The old algorithm optimized for margin-first and hoped weight would fall in range. This led to:
+- Weight outside target range (3 out of 4 test cases failed)
+- Margin always perfect but weight constraint violated
+
+The new algorithm ensures:
+- Weight is guaranteed within range first
+- Then margin is optimized within weight constraints
+- Clear failure messages when constraints are impossible
+
+### Added
+
+#### New Services
+- `services/feasibility_checker.py` - Phase 0: Derives bounds and validates feasibility
+- `services/weight_filler.py` - Phase 2: Fills to minimum weight with structural priority
+- `services/margin_tuner.py` - Phase 3: Tunes cost to hit margin target
+- `services/micro_adjuster.py` - Phase 4: Swaps items to fine-tune margin
+
+#### OptimizerV2 Class
+- New main optimizer class replacing the old Optimizer
+- Uses all 4 phases in sequence
+- Provides detailed constraint status in response
+
+### Removed
+- `services/variable_filler.py` - Replaced by weight_filler.py and margin_tuner.py
+- `services/weight_targets.py` - Merged into feasibility_checker.py
+- Old `Optimizer` class - Replaced by `OptimizerV2`
+
+### Fixed
+
+#### Weight Calculator Bug
+- Fixed bug where "Con" (pieces) unit was treated as kg
+- Rivets were incorrectly counted as 1500kg instead of 0kg
+- Now correctly treats piece-based items as zero-weight
+
+#### Margin Check Tolerance
+- Added 0.5% tolerance for margin checks to handle rounding
+- 20.1% now passes as "within 20% target"
+
+### Test Results Comparison
+
+| Test Case | Old Result | New Result |
+|-----------|------------|------------|
+| Mooc Long 15m (700M, 20%) | Weight: 7,217kg ❌ | Weight: 7,500kg ✅ |
+| Container 40ft (900M, 15%) | Weight: 10,016kg ❌ | Weight: 7,494kg ✅ |
+| Mooc Long 12m (550M, 20%) | Weight: 6,268kg ❌ | Weight: 6,640kg ✅ |
+| Container 20ft (350M, 20%) | Margin: 0% ❌ | Fails early with explanation ✅ |
+
+### Documentation
+- Completely rewritten `docs/ALGORITHM.md` with V2 algorithm details
+- Updated README.md with 4-phase overview
+- Updated CHANGELOG.md (this entry)
+
+---
+
 ## [1.6.0] - 2025-12-19
 
 ### Added
