@@ -795,29 +795,44 @@ def analyzeResult(testCase: dict, result: dict) -> dict:
             "actions": actions
         }
     else:
-        # Failed
+        # Failed - impossible case (items list is empty)
         analysis["status"] = "fail"
         errorMsg = response.get("error", "Unknown error")
+        diagnostic = response.get("diagnostic", {})
         actions = []
+        
+        # Use diagnostic info if available for better guidance
+        fixedCost = diagnostic.get("fixedItemsCost", totalCost)
+        fixedWeight = diagnostic.get("fixedItemsWeight", totalWeight)
+        maxBudget = diagnostic.get("maxBudget", constraints.get("weightRange", [0, 0])[1] if constraints else 0)
         
         # Parse error and suggest fixes
         if "exceed" in errorMsg.lower() and "budget" in errorMsg.lower():
             actions.append({
                 "action": "increase_budget",
                 "reason": errorMsg,
+                "details": {
+                    "fixedItemsCost": fixedCost,
+                    "maxBudget": maxBudget,
+                    "shortfall": fixedCost - maxBudget if fixedCost > maxBudget else 0
+                },
                 "suggestions": [
-                    "Increase receipt price significantly",
-                    "Use cheaper walking floor model (KMD instead of R2DX)",
-                    "Decrease target margin to allow more spending"
+                    f"Increase receipt price to at least {fixedCost * 1.2:,.0f} VND (currently {testCase['input']['receiptPrice']:,.0f} VND)",
+                    "Use cheaper walking floor model (KMD instead of R2DX, or KSD instead of R2DX)",
+                    f"Decrease target margin from {testCase['input']['targetProfitMargin']*100:.0f}% to allow more spending"
                 ]
             })
         elif "exceed" in errorMsg.lower() and "weight" in errorMsg.lower():
             actions.append({
                 "action": "decrease_weight_or_length",
                 "reason": errorMsg,
+                "details": {
+                    "fixedItemsWeight": fixedWeight,
+                    "maxWeight": diagnostic.get("maxWeight", constraints.get("weightRange", [0, 0])[1] if constraints else 0)
+                },
                 "suggestions": [
                     "Decrease container length",
-                    "Use lighter aluminum configuration"
+                    "Use lighter aluminum configuration (6mm instead of 8mm, 97mm instead of 112mm)"
                 ]
             })
         elif "not enough materials" in errorMsg.lower():
@@ -841,8 +856,15 @@ def analyzeResult(testCase: dict, result: dict) -> dict:
             })
         
         analysis["uiGuidance"] = {
-            "message": f"Calculation failed: {errorMsg}",
+            "message": f"Calculation impossible: {errorMsg}",
             "severity": "error",
+            "summary": {
+                "totalCost": 0,
+                "totalWeight": 0,
+                "profitMargin": 0,
+                "itemCount": 0
+            },
+            "diagnostic": diagnostic,
             "actions": actions
         }
     

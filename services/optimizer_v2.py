@@ -157,9 +157,38 @@ class OptimizerV2:
         
         if not feasibility.feasible:
             logger.error(f"❌ Infeasible: {feasibility.reason}")
+            logger.error(f"   Fixed items cost: {currentCost:,.0f} VND")
+            logger.error(f"   Fixed items weight: {currentWeight:,.0f} kg")
+            logger.error(f"   Max budget allowed: {bounds.maxCost:,.0f} VND")
+            logger.error(f"   Min weight required: {bounds.minWeight:,.0f} kg")
+            logger.error(f"   Max weight allowed: {bounds.maxWeight:,.0f} kg")
+            logger.error(f"   Target margin: {bounds.targetMargin*100:.0f}%")
+            logger.error(f"   Receipt price: {receiptPrice:,.0f} VND")
+            logger.error("=" * 60)
+            logger.error("💡 SUGGESTIONS:")
+            if currentCost > bounds.maxCost:
+                logger.error("   → Increase receipt price significantly")
+                logger.error("   → Use cheaper walking floor model (KMD < KSD < R2DX)")
+                logger.error("   → Decrease target margin to allow more spending")
+            if currentWeight > bounds.maxWeight:
+                logger.error("   → Decrease container length")
+                logger.error("   → Use lighter aluminum configuration")
+            logger.error("=" * 60)
+            
+            # Return empty result with diagnostic info
+            diagnosticInfo = {
+                "fixedItemsCost": currentCost,
+                "fixedItemsWeight": currentWeight,
+                "fixedItemsCount": len(allItems),
+                "maxBudget": bounds.maxCost,
+                "minWeight": bounds.minWeight,
+                "maxWeight": bounds.maxWeight,
+            }
+            logger.info(f"Returning with diagnostic info: {diagnosticInfo}")
             return self._buildResult(
-                allItems, currentWeight, currentCost, receiptPrice, bounds,
-                containerBuilt, error=feasibility.reason
+                [], 0, 0, receiptPrice, bounds,
+                containerBuilt, error=feasibility.reason,
+                diagnosticInfo=diagnosticInfo
             )
         
         # ─────────────────────────────────────────────────────────────
@@ -259,8 +288,14 @@ class OptimizerV2:
         bounds: OptimizationBounds,
         containerBuilt: bool,
         error: str = None,
+        diagnosticInfo: dict = None,
     ) -> dict[str, Any]:
-        """Build the final result dictionary."""
+        """
+        Build the final result dictionary.
+        
+        For impossible cases (error), returns empty items list but includes
+        diagnostic info for UI guidance.
+        """
         profit = receiptPrice - totalCost
         profitMargin = (profit / receiptPrice) * 100 if receiptPrice > 0 else 0
         
@@ -271,14 +306,23 @@ class OptimizerV2:
         status = "ok" if weightOk and marginOk and not error else "warning"
         if error:
             status = "error"
+            # For impossible cases, return empty items
+            items = []
+            totalWeight = 0
+            totalCost = 0
+            profit = 0
+            profitMargin = 0
         
         logger.info("=" * 60)
-        logger.info(f"✅ Final: weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
+        if error:
+            logger.info(f"❌ Final: IMPOSSIBLE - {error}")
+        else:
+            logger.info(f"✅ Final: weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
         logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
         logger.info(f"   Margin OK: {marginOk} ({bounds.minMargin*100:.0f}-{bounds.maxMargin*100:.0f}%)")
         logger.info("=" * 60)
         
-        return {
+        result = {
             "status": status,
             "items": items,
             "totalWeight": round(totalWeight, 2),
@@ -298,6 +342,15 @@ class OptimizerV2:
             },
             "error": error,
         }
+        
+        # Add diagnostic info for impossible cases
+        if diagnosticInfo:
+            logger.info(f"Adding diagnostic info: {diagnosticInfo}")
+            result["diagnostic"] = diagnosticInfo
+        else:
+            logger.warning("No diagnostic info provided for error case")
+        
+        return result
 
 
 def main():

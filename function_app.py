@@ -70,18 +70,34 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
             targetProfitMargin=userInput.targetProfitMargin,
         )
 
-        response = {
-            "status": result.get("status", "ok"),
-            "items": result["items"],
-            "totalWeight": result["totalWeight"],
-            "totalCost": result["totalCost"],
-            "receiptPrice": result["receiptPrice"],
-            "profit": result["profit"],
-            "profitMargin": result["profitMargin"],
-            "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
-            "constraints": result.get("constraints", {}),
-            "error": result.get("error"),
-        }
+        # For impossible cases (error status), return minimal response with diagnostic info
+        if result.get("status") == "error":
+            response = {
+                "status": "error",
+                "error": result.get("error"),
+                "items": [],  # Empty - nothing to return
+                "totalWeight": 0,
+                "totalCost": 0,
+                "receiptPrice": result.get("receiptPrice"),
+                "profit": 0,
+                "profitMargin": 0,
+                "constraints": result.get("constraints", {}),
+                "diagnostic": result.get("diagnostic", {}),
+            }
+        else:
+            # Normal response with items
+            response = {
+                "status": result.get("status", "ok"),
+                "items": result["items"],
+                "totalWeight": result["totalWeight"],
+                "totalCost": result["totalCost"],
+                "receiptPrice": result["receiptPrice"],
+                "profit": result["profit"],
+                "profitMargin": result["profitMargin"],
+                "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
+                "constraints": result.get("constraints", {}),
+                "error": result.get("error"),
+            }
         
         return func.HttpResponse(
             body=json.dumps(response, default=str),
