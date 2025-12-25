@@ -106,10 +106,11 @@ class OptimizerV2:
                     allItems.append(item)
                     usedQty[item["id"]] = usedQty.get(item["id"], 0) + item["quantity"]
                     excludeIds.add(item["id"])
+                    logger.info(f"   📦 Container: {item['type']}: {item.get('quantity',1):.1f} x {item['unitPrice']:,.0f} = {item['totalValue']:,.0f}")
                 
                 currentWeight += buildResult["totalWeight"]
                 currentCost += buildResult["totalCost"]
-                logger.info(f"Phase 1b: Built container structure: +{buildResult['totalWeight']:.0f}kg")
+                logger.info(f"Phase 1b: Built container structure: +{buildResult['totalWeight']:.0f}kg, +{buildResult['totalCost']:,.0f}")
         else:
             # Container 20ft / 40ft: Check inventory for pre-built
             prebuiltContainer = self._getPrebuiltContainer(containerType)

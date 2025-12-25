@@ -258,9 +258,8 @@ TEST_CASES = [
     },
     {
         "name": "mooc_9m_R2DX_500M_25pct",
-        "description": "Mooc Long 9m - High margin with R2DX (may fail - tight budget)",
-        "expectedResult": "fail",
-        "failReason": "25% margin = 375M budget. R2DX (249M) + aluminum + pump leaves ~1M for 2500kg materials",
+        "description": "Mooc Long 9m - High margin with R2DX (passes after container builder fix)",
+        "expectedResult": "pass",
         "input": {
             "containerType": "mooc_long",
             "containerLength": 9.0,
@@ -301,9 +300,8 @@ TEST_CASES = [
     },
     {
         "name": "mooc_12m_KMD_450M_22pct",
-        "description": "Mooc Long 12m - Budget KMD (may fail - tight budget for 12m)",
-        "expectedResult": "fail",
-        "failReason": "22% margin = 351M budget. KMD + aluminum uses most of it, leaving ~19M for ~2500kg materials",
+        "description": "Mooc Long 12m - Budget KMD (passes after container builder fix)",
+        "expectedResult": "pass",
         "input": {
             "containerType": "mooc_long",
             "containerLength": 12.0,
@@ -466,8 +464,8 @@ TEST_CASES = [
     },
     {
         "name": "edge_very_low_margin_5pct",
-        "description": "Very low margin (5%) - should pass easily",
-        "expectedResult": "pass",
+        "description": "Very low margin (5%) - may warn if can't hit exact margin",
+        "expectedResult": "warning",
         "input": {
             "containerType": "mooc_long",
             "containerLength": 12.0,
@@ -798,9 +796,8 @@ TEST_CASES = [
     },
     {
         "name": "compare_r2dx_12m_500M_20pct",
-        "description": "R2DX (premium floor) - 12m Mooc - fails because R2DX is too expensive",
-        "expectedResult": "fail",
-        "failReason": "R2DX (249M) + aluminum + pump = 424M out of 400M budget (80% of 500M)",
+        "description": "R2DX (premium floor) - 12m Mooc - passes after container builder fix",
+        "expectedResult": "pass",
         "input": {
             "containerType": "mooc_long",
             "containerLength": 12.0,

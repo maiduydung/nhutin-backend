@@ -31,17 +31,15 @@ class FixedItemsSelector:
         itemType = config["type"]
         weight = config["weight"]
         
+        # Pick the CHEAPEST available walking floor, not just first by id
         result = self.db.executeQuery(
             """
-            SELECT DISTINCT ON (i.id)
-                i.id, i.code, i.name, i.unit,
-                CASE WHEN ir.final_quantity > 0 
-                     THEN ir.final_value::numeric / ir.final_quantity 
-                     ELSE 0 END as unit_price
+            SELECT i.id, i.code, i.name, i.unit,
+                   ir.final_value::numeric / ir.final_quantity as unit_price
             FROM items i
             JOIN inventory_records ir ON i.id = ir.item_id
             WHERE i.type = %s AND ir.final_quantity > 0
-            ORDER BY i.id, ir.record_date DESC
+            ORDER BY ir.final_value::numeric / ir.final_quantity ASC
             LIMIT 1
             """,
             (itemType,),
@@ -52,6 +50,8 @@ class FixedItemsSelector:
 
         row = result[0]
         unitPrice = float(row[4])
+        
+        logger.info(f"   📦 Walking floor: id={row[0]}, price={unitPrice:,.0f}, weight={weight}kg")
         
         return {
             "id": row[0],
@@ -111,6 +111,8 @@ class FixedItemsSelector:
         row = result[0]
         unitPrice = float(row[4])
         
+        logger.info(f"   📦 Pump: id={row[0]}, price={unitPrice:,.0f}, weight={HYDRAULIC_PUMP_WEIGHT_KG}kg")
+        
         return {
             "id": row[0],
             "code": row[1],
@@ -146,6 +148,8 @@ class FixedItemsSelector:
 
         row = result[0]
         unitPrice = float(row[4])
+        
+        logger.info(f"   📦 Oil: id={row[0]}, price={unitPrice:,.0f}, weight={HYDRAULIC_OIL_WEIGHT_KG}kg")
         
         return {
             "id": row[0],
@@ -187,6 +191,9 @@ class FixedItemsSelector:
 
         row = result[0]
         unitPrice = float(row[4])
+        totalValue = round(weight * unitPrice, 2)
+        
+        logger.info(f"   📦 Aluminum: id={row[0]}, qty={weight:.1f}kg x {unitPrice:,.0f} = {totalValue:,.0f}")
         
         return {
             "id": row[0],
@@ -196,7 +203,7 @@ class FixedItemsSelector:
             "type": "aluminum",
             "quantity": round(weight, 2),
             "unitPrice": unitPrice,
-            "totalValue": round(weight * unitPrice, 2),
+            "totalValue": totalValue,
             "weight": round(weight, 2),
         }
 

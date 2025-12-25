@@ -54,15 +54,16 @@ class ContainerBuilder:
         totalCost += sheetResult["totalCost"]
         totalWeight += sheetResult["totalWeight"]
 
-        # Get aluminum (includes steel compensation)
-        aluminumNeeded = self._calculateAluminumNeeded() + steelShortfall
-        alumResult = self._getAluminum(aluminumNeeded)
-        materials.extend(alumResult["items"])
-        totalCost += alumResult["totalCost"]
-        totalWeight += alumResult["totalWeight"]
+        # NOTE: Do NOT add aluminum here - it's already included in fixed items
+        # Only compensate if steel is short by adding extra steel-box
+        if steelShortfall > 0:
+            extraSteelResult = self._getSteelMaterials(steelShortfall)
+            materials.extend(extraSteelResult["items"])
+            totalCost += extraSteelResult["totalCost"]
+            totalWeight += extraSteelResult["totalWeight"]
 
-        # Need at least 50% of materials
-        requiredWeight = specs["steel_frame_kg"] + self._calculateAluminumNeeded()
+        # Need at least 50% of steel + sheets
+        requiredWeight = specs["steel_frame_kg"]
         canBuild = totalWeight >= requiredWeight * 0.5
 
         return {
@@ -133,11 +134,7 @@ class ContainerBuilder:
         totalCost += sheetResult["totalCost"]
         totalWeight += sheetResult["totalWeight"]
 
-        # Scaled aluminum
-        alumResult = self._getAluminum(self._calculateAluminumNeeded() * scaleFactor)
-        materials.extend(alumResult["items"])
-        totalCost += alumResult["totalCost"]
-        totalWeight += alumResult["totalWeight"]
+        # NOTE: Do NOT add aluminum - already included in fixed items
 
         return {
             "success": len(materials) > 0,
