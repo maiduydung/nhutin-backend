@@ -34,6 +34,18 @@ class UserInput(BaseModel):
         le=0.50,
         description="Target profit margin (0.05-0.50, default 0.20 = 20%)"
     )
+    buildContainer: bool = Field(
+        default=True,
+        description="Whether to build container structure from materials. "
+                    "Only applicable for thung_xe_tai. Set to False if user "
+                    "already has a truck body and only needs walking floor installed."
+    )
+    existingContainerWeight: float = Field(
+        default=0,
+        ge=0,
+        description="Weight of user's existing container/truck body in kg. "
+                    "Only used when buildContainer=False. Typical truck body: 1500-2500 kg."
+    )
 
     def toDict(self) -> dict[str, Any]:
         return self.model_dump()

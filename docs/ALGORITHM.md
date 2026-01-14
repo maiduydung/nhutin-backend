@@ -49,7 +49,41 @@ Always included, no optimization:
 
 **Container Handling:**
 - `container_20ft/40ft`: Use pre-built if available, else build from materials
-- `mooc_long/thung_xe_tai`: Always build structure from raw materials
+- `mooc_long`: Always build structure from raw materials
+- `thung_xe_tai`: Build structure from materials by default, OR skip if `buildContainer=False`
+
+### The `buildContainer` Flag
+
+For `thung_xe_tai` (truck body) orders, users may already have an existing truck body and only need the walking floor system installed.
+
+```python
+buildContainer: bool = True  # default
+existingContainerWeight: float = 0  # kg, only used when buildContainer=False
+
+# When True (default): Build container structure from steel materials (~980 kg)
+# When False: Skip container building, use existingContainerWeight for weight calculation
+```
+
+**Use Case:**
+- User has existing truck body → set `buildContainer=False` and `existingContainerWeight=1800` (typical)
+- New build from scratch → leave as `True` (default)
+
+**Impact on Budget & Weight:**
+- With `buildContainer=True`: Container build uses ~980 kg of cheap steel (~15M VND)
+- With `buildContainer=False`: 
+  - All cheap steel remains available for weight filling
+  - `existingContainerWeight` counts toward total weight (no cost - already owned)
+
+**Example:**
+```json
+{
+  "containerType": "thung_xe_tai",
+  "containerLength": 9.5,
+  "buildContainer": false,
+  "existingContainerWeight": 1800,  // User's truck body weighs 1.8 tons
+  ...
+}
+```
 
 ### Phase 2: Weight-First Filling
 

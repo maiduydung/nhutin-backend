@@ -49,13 +49,26 @@ class OptimizerV2:
         containerType: str,
         thickness: int = 6,
         targetProfitMargin: float = 0.20,
+        buildContainer: bool = True,
+        existingContainerWeight: float = 0,
     ) -> dict[str, Any]:
         """
         Main optimization function using 4-phase approach.
+        
+        Args:
+            buildContainer: Whether to build container structure from materials.
+                           Only applies to thung_xe_tai. Set False if user already
+                           has a truck body and only needs walking floor installed.
+            existingContainerWeight: Weight of user's existing container in kg.
+                                    Only used when buildContainer=False.
         """
         logger.info("=" * 60)
         logger.info(f"🚀 OptimizerV2: {containerType}, {containerLength}m")
         logger.info(f"   Receipt: {receiptPrice:,.0f}, Target margin: {targetProfitMargin*100:.0f}%")
+        if containerType == "thung_xe_tai" and not buildContainer:
+            logger.info(f"   📋 buildContainer=False: Skipping container structure build")
+            if existingContainerWeight > 0:
+                logger.info(f"   📋 Existing container weight: {existingContainerWeight:,.0f} kg")
         logger.info("=" * 60)
         
         # ─────────────────────────────────────────────────────────────
@@ -87,7 +100,15 @@ class OptimizerV2:
         containerBuilt = False
         prebuiltContainer = None
         
-        if containerType in CONTAINER_TYPES_WITHOUT_CONTAINER:
+        # Determine if we should build container structure
+        # - mooc_long: always build from materials
+        # - thung_xe_tai: build only if buildContainer=True (user may already have truck body)
+        shouldBuildContainer = (
+            containerType == "mooc_long" or 
+            (containerType == "thung_xe_tai" and buildContainer)
+        )
+        
+        if shouldBuildContainer:
             # Mooc Long / Thung Xe Tai: Build structure from materials
             containerBuilt = True
             containerSize = "40ft"
@@ -111,6 +132,14 @@ class OptimizerV2:
                 currentWeight += buildResult["totalWeight"]
                 currentCost += buildResult["totalCost"]
                 logger.info(f"Phase 1b: Built container structure: +{buildResult['totalWeight']:.0f}kg, +{buildResult['totalCost']:,.0f}")
+        elif containerType == "thung_xe_tai" and not buildContainer:
+            # User already has truck body, skip container building
+            # Add the existing container weight to current weight (no cost - already owned)
+            if existingContainerWeight > 0:
+                currentWeight += existingContainerWeight
+                logger.info(f"Phase 1b: Skipped - using existing truck body ({existingContainerWeight:.0f} kg)")
+            else:
+                logger.info("Phase 1b: Skipped (user has existing truck body, no weight specified)")
         else:
             # Container 20ft / 40ft: Check inventory for pre-built
             prebuiltContainer = self._getPrebuiltContainer(containerType)

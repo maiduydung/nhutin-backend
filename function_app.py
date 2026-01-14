@@ -68,6 +68,8 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
             containerType=userInput.containerType,
             thickness=userInput.thickness,
             targetProfitMargin=userInput.targetProfitMargin,
+            buildContainer=userInput.buildContainer,
+            existingContainerWeight=userInput.existingContainerWeight,
         )
 
         # For impossible cases (error status), return minimal response with diagnostic info
