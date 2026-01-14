@@ -14,26 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### `buildContainer` Flag for `thung_xe_tai`
 - **New Feature**: Users with existing truck bodies can skip container structure building
 - When `buildContainer=false`, Phase 1b (container structure build) is skipped
+- Default truck body weight (1800 kg) is added automatically
 - All cheap steel materials remain available for weight filling instead
 
 ```json
 {
   "containerType": "thung_xe_tai",
-  "buildContainer": false,  // Skip building container structure
-  "existingContainerWeight": 1800  // User's existing truck body weight
+  "buildContainer": false
 }
 ```
-
-#### `existingContainerWeight` Parameter
-- **New Feature**: Specify weight of user's existing truck body (in kg)
-- Only used when `buildContainer=false`
-- Counts toward total weight target (no cost - already owned)
-- Typical truck body: 1,500-2,500 kg
 
 ### Use Case
 When a user already has a truck body and only needs the walking floor system installed:
 1. Set `buildContainer: false` to skip building container structure
-2. Set `existingContainerWeight: 1800` (or actual weight) to account for existing truck body
+2. System automatically uses default truck body weight (1800 kg)
 3. Algorithm uses existing weight toward target, freeing up budget for other materials
 
 ### API Changes
@@ -41,16 +35,19 @@ When a user already has a truck body and only needs the walking floor system ins
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `buildContainer` | `bool` | `true` | Skip container build for `thung_xe_tai` |
-| `existingContainerWeight` | `float` | `0` | Weight (kg) of existing container |
+
+### Configuration
+- Added `DEFAULT_EXISTING_TRUCK_BODY_WEIGHT = 1800` in `config.py`
 
 ### Files Modified
-- `models/user_input.py` - Added `buildContainer` and `existingContainerWeight` fields
-- `services/optimizer.py` - Skip Phase 1b logic, use existing weight
-- `function_app.py` - Pass new parameters to optimizer
-- `docs/ALGORITHM.md` - Documentation for new flags
+- `models/user_input.py` - Added `buildContainer` field
+- `services/optimizer.py` - Skip Phase 1b logic, use default weight
+- `function_app.py` - Pass new parameter to optimizer
+- `config.py` - Added default truck body weight constant
+- `docs/ALGORITHM.md` - Documentation for new flag
 
 ### Tests Added
-- 9 new tests for `buildContainer` flag and `existingContainerWeight`
+- 9 new tests for `buildContainer` flag
 - All 40 tests passing
 
 ---

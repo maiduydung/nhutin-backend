@@ -59,6 +59,10 @@ CONTAINER_EMPTY_WEIGHTS = {
     "container_40ft": 2500,
 }
 
+# Default weight for existing truck body when buildContainer=False
+# Used when user has existing truck body but doesn't specify weight
+DEFAULT_EXISTING_TRUCK_BODY_WEIGHT = 1800  # kg (typical truck body)
+
 # Default lengths (meters) - used if user doesn't specify
 CONTAINER_DEFAULT_LENGTHS = {
     "container_20ft": 6.096,

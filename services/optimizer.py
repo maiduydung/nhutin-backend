@@ -21,6 +21,7 @@ from config import (
     logger,
     CONTAINER_TYPES_WITHOUT_CONTAINER,
     CONTAINER_EMPTY_WEIGHTS,
+    DEFAULT_EXISTING_TRUCK_BODY_WEIGHT,
 )
 
 
@@ -135,11 +136,10 @@ class OptimizerV2:
         elif containerType == "thung_xe_tai" and not buildContainer:
             # User already has truck body, skip container building
             # Add the existing container weight to current weight (no cost - already owned)
-            if existingContainerWeight > 0:
-                currentWeight += existingContainerWeight
-                logger.info(f"Phase 1b: Skipped - using existing truck body ({existingContainerWeight:.0f} kg)")
-            else:
-                logger.info("Phase 1b: Skipped (user has existing truck body, no weight specified)")
+            # Use default weight if not specified
+            effectiveWeight = existingContainerWeight if existingContainerWeight > 0 else DEFAULT_EXISTING_TRUCK_BODY_WEIGHT
+            currentWeight += effectiveWeight
+            logger.info(f"Phase 1b: Skipped - using existing truck body ({effectiveWeight:.0f} kg)")
         else:
             # Container 20ft / 40ft: Check inventory for pre-built
             prebuiltContainer = self._getPrebuiltContainer(containerType)

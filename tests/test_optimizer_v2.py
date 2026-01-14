@@ -600,9 +600,8 @@ class TestBuildContainerFlag:
         print(f"✅ User case with existingWeight: weight={result['totalWeight']}, "
               f"margin={result['profitMargin']}%")
 
-    def test_existing_container_weight_zero_by_default(self, optimizer):
-        """existingContainerWeight defaults to 0."""
-        # Without existingContainerWeight, the 378.7M budget should fail
+    def test_existing_container_weight_uses_default_when_not_specified(self, optimizer):
+        """When buildContainer=False and existingContainerWeight not specified, use default 1800kg."""
         result = optimizer.optimize(
             containerLength=9.5,
             itemModelType="KSD",
@@ -611,12 +610,13 @@ class TestBuildContainerFlag:
             containerType="thung_xe_tai",
             targetProfitMargin=0.20,
             buildContainer=False,
-            # existingContainerWeight not specified - defaults to 0
+            # existingContainerWeight not specified - should use default 1800kg
         )
         
-        # Should fail because no existing weight to help reach target
-        assert result["status"] == "error"
-        assert "weight" in result["error"].lower()
+        # Should succeed with default truck body weight (1800kg)
+        assert result["status"] in ["ok", "warning"], f"Expected success with default weight, got: {result.get('error')}"
+        assert result["containerBuiltFromMaterials"] == False
+        print(f"✅ Success with default truck body weight: weight={result['totalWeight']}, margin={result['profitMargin']}%")
 
 
 class TestUserInputBuildContainerFlag:

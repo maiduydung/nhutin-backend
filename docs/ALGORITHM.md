@@ -58,30 +58,27 @@ For `thung_xe_tai` (truck body) orders, users may already have an existing truck
 
 ```python
 buildContainer: bool = True  # default
-existingContainerWeight: float = 0  # kg, only used when buildContainer=False
 
 # When True (default): Build container structure from steel materials (~980 kg)
-# When False: Skip container building, use existingContainerWeight for weight calculation
+# When False: Skip container building, use default 1800kg for existing truck body weight
 ```
 
 **Use Case:**
-- User has existing truck body → set `buildContainer=False` and `existingContainerWeight=1800` (typical)
-- New build from scratch → leave as `True` (default)
+- User has existing truck body → set `buildContainer=false`
+- New build from scratch → leave as `true` (default)
 
 **Impact on Budget & Weight:**
-- With `buildContainer=True`: Container build uses ~980 kg of cheap steel (~15M VND)
-- With `buildContainer=False`: 
+- With `buildContainer=true`: Container build uses ~980 kg of cheap steel (~15M VND)
+- With `buildContainer=false`: 
   - All cheap steel remains available for weight filling
-  - `existingContainerWeight` counts toward total weight (no cost - already owned)
+  - Default 1800 kg added for existing truck body (no cost - already owned)
 
 **Example:**
 ```json
 {
   "containerType": "thung_xe_tai",
   "containerLength": 9.5,
-  "buildContainer": false,
-  "existingContainerWeight": 1800,  // User's truck body weighs 1.8 tons
-  ...
+  "buildContainer": false
 }
 ```
 
