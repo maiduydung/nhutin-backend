@@ -70,6 +70,7 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
             targetProfitMargin=userInput.targetProfitMargin,
             buildContainer=userInput.buildContainer,
             existingContainerWeight=userInput.existingContainerWeight,
+            relaxedMode=userInput.relaxedMode,
         )
 
         # For impossible cases (error status), return minimal response with diagnostic info
@@ -99,6 +100,7 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
                 "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
                 "constraints": result.get("constraints", {}),
                 "error": result.get("error"),
+                "warning": result.get("warning"),  # Relaxed mode warning
             }
         
         return func.HttpResponse(

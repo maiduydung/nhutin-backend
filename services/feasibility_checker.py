@@ -44,6 +44,7 @@ class FeasibilityResult:
     reason: str | None = None
     fixedCost: float = 0
     fixedWeight: float = 0
+    isWarning: bool = False  # True when relaxedMode bypasses a hard failure
 
 
 class FeasibilityChecker:
@@ -129,36 +130,52 @@ class FeasibilityChecker:
         fixedWeight: float,
         availableMaterials: list[dict[str, Any]],
         usedQty: dict[int, int] = None,
+        relaxedMode: bool = False,
     ) -> FeasibilityResult:
         """
         Check if it's possible to hit the feasibility rectangle.
         
+        Args:
+            relaxedMode: When True, soft failures return feasible=True with isWarning=True,
+                        allowing optimizer to continue with best-effort approach.
+        
         Returns FeasibilityResult with:
         - feasible: bool
         - reason: explanation if not feasible
+        - isWarning: True if relaxedMode bypassed a hard failure
         """
         usedQty = usedQty or {}
         
         logger.info(f"🔍 Checking feasibility: {bounds}")
         logger.info(f"   Fixed items: {fixedWeight:.0f}kg, {fixedCost:,.0f} VND")
+        if relaxedMode:
+            logger.info(f"   ⚠️ Relaxed mode enabled - will continue even if constraints impossible")
         
         # Check 1: Fixed items already exceed constraints
         if fixedWeight > bounds.maxWeight:
+            reason = f"Fixed items ({fixedWeight:.0f}kg) exceed max weight ({bounds.maxWeight}kg)"
+            if relaxedMode:
+                logger.warning(f"   ⚠️ {reason} - continuing in relaxed mode")
+                return FeasibilityResult(
+                    feasible=True, bounds=bounds, reason=reason,
+                    fixedCost=fixedCost, fixedWeight=fixedWeight, isWarning=True,
+                )
             return FeasibilityResult(
-                feasible=False,
-                bounds=bounds,
-                reason=f"Fixed items ({fixedWeight:.0f}kg) exceed max weight ({bounds.maxWeight}kg)",
-                fixedCost=fixedCost,
-                fixedWeight=fixedWeight,
+                feasible=False, bounds=bounds, reason=reason,
+                fixedCost=fixedCost, fixedWeight=fixedWeight,
             )
         
         if fixedCost > bounds.maxCost:
+            reason = f"Fixed items ({fixedCost:,.0f}) exceed max budget ({bounds.maxCost:,.0f})"
+            if relaxedMode:
+                logger.warning(f"   ⚠️ {reason} - continuing in relaxed mode")
+                return FeasibilityResult(
+                    feasible=True, bounds=bounds, reason=reason,
+                    fixedCost=fixedCost, fixedWeight=fixedWeight, isWarning=True,
+                )
             return FeasibilityResult(
-                feasible=False,
-                bounds=bounds,
-                reason=f"Fixed items ({fixedCost:,.0f}) exceed max budget ({bounds.maxCost:,.0f})",
-                fixedCost=fixedCost,
-                fixedWeight=fixedWeight,
+                feasible=False, bounds=bounds, reason=reason,
+                fixedCost=fixedCost, fixedWeight=fixedWeight,
             )
         
         # Check 2: Can we reach minimum weight with available materials?
@@ -170,12 +187,16 @@ class FeasibilityChecker:
         )
         
         if weightNeeded > 0 and totalAvailableWeight < weightNeeded:
+            reason = f"Not enough materials to reach min weight. Need {weightNeeded:.0f}kg more, only {totalAvailableWeight:.0f}kg available in inventory"
+            if relaxedMode:
+                logger.warning(f"   ⚠️ {reason} - continuing in relaxed mode")
+                return FeasibilityResult(
+                    feasible=True, bounds=bounds, reason=reason,
+                    fixedCost=fixedCost, fixedWeight=fixedWeight, isWarning=True,
+                )
             return FeasibilityResult(
-                feasible=False,
-                bounds=bounds,
-                reason=f"Not enough materials to reach min weight. Need {weightNeeded:.0f}kg more, only {totalAvailableWeight:.0f}kg available in inventory",
-                fixedCost=fixedCost,
-                fixedWeight=fixedWeight,
+                feasible=False, bounds=bounds, reason=reason,
+                fixedCost=fixedCost, fixedWeight=fixedWeight,
             )
         
         # Check 3: Do we have enough BUDGET to buy materials to reach min weight?
@@ -213,16 +234,20 @@ class FeasibilityChecker:
                     break
             
             if minCostToReachWeight > remainingBudget:
+                reason = (
+                    f"Insufficient budget to reach weight target. "
+                    f"Fixed items cost {fixedCost:,.0f} VND, leaving only {remainingBudget:,.0f} VND. "
+                    f"Need {weightNeeded:,.0f}kg more which costs at least {minCostToReachWeight:,.0f} VND"
+                )
+                if relaxedMode:
+                    logger.warning(f"   ⚠️ {reason} - continuing in relaxed mode")
+                    return FeasibilityResult(
+                        feasible=True, bounds=bounds, reason=reason,
+                        fixedCost=fixedCost, fixedWeight=fixedWeight, isWarning=True,
+                    )
                 return FeasibilityResult(
-                    feasible=False,
-                    bounds=bounds,
-                    reason=(
-                        f"Insufficient budget to reach weight target. "
-                        f"Fixed items cost {fixedCost:,.0f} VND, leaving only {remainingBudget:,.0f} VND. "
-                        f"Need {weightNeeded:,.0f}kg more which costs at least {minCostToReachWeight:,.0f} VND"
-                    ),
-                    fixedCost=fixedCost,
-                    fixedWeight=fixedWeight,
+                    feasible=False, bounds=bounds, reason=reason,
+                    fixedCost=fixedCost, fixedWeight=fixedWeight,
                 )
         
         # Check 4: Can we spend enough to reach margin target?
@@ -234,12 +259,16 @@ class FeasibilityChecker:
         )
         
         if costNeeded > 0 and totalAvailableCost < costNeeded:
+            reason = f"Not enough materials to reach margin target. Need to spend {costNeeded:,.0f} more, only {totalAvailableCost:,.0f} available"
+            if relaxedMode:
+                logger.warning(f"   ⚠️ {reason} - continuing in relaxed mode")
+                return FeasibilityResult(
+                    feasible=True, bounds=bounds, reason=reason,
+                    fixedCost=fixedCost, fixedWeight=fixedWeight, isWarning=True,
+                )
             return FeasibilityResult(
-                feasible=False,
-                bounds=bounds,
-                reason=f"Not enough materials to reach margin target. Need to spend {costNeeded:,.0f} more, only {totalAvailableCost:,.0f} available",
-                fixedCost=fixedCost,
-                fixedWeight=fixedWeight,
+                feasible=False, bounds=bounds, reason=reason,
+                fixedCost=fixedCost, fixedWeight=fixedWeight,
             )
         
         logger.info(f"   ✅ Feasibility check passed")

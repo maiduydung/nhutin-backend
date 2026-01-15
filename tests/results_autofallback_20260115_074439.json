@@ -1,0 +1,99 @@
+{
+  "timestamp": "20260115_074439",
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "warnings": 6,
+    "failed": 0
+  },
+  "results": [
+    {
+      "test": "Mooc 15m - Good Budget (700M, 20%)",
+      "status": "warning",
+      "items": 6,
+      "weight": 4192.29,
+      "margin": 15.02,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "\u26a0\ufe0f INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 269,831,937 VND, leaving only 325,168,063 VND. Need 6,000kg more which costs at least 737,583,135 VND. Running in best-effort mode to complete the order.",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Mooc 15m - Low Budget (430M, 15%) - Auto Fallback",
+      "status": "warning",
+      "items": 6,
+      "weight": 2596.29,
+      "margin": 10.01,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "\u26a0\ufe0f INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 269,831,937 VND, leaving only 117,168,063 VND. Need 6,000kg more which costs at least 737,583,135 VND. Running in best-effort mode to complete the order.",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Mooc 15m - Manual Relaxed Mode (430M, 15%)",
+      "status": "warning",
+      "items": 6,
+      "weight": 2596.29,
+      "margin": 10.01,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "Insufficient budget to reach weight target. Fixed items cost 269,831,937 VND, leaving only 117,168,063 VND. Need 6,000kg more which costs at least 737,583,135 VND",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Container 20ft - KSD 400M 20%",
+      "status": "ok",
+      "items": 8,
+      "weight": 3538.08,
+      "margin": 19.98,
+      "weightOk": true,
+      "marginOk": true,
+      "warning": null,
+      "outcome": "\u2705 OK"
+    },
+    {
+      "test": "Container 40ft - KSD 800M 15%",
+      "status": "warning",
+      "items": 6,
+      "weight": 5152.16,
+      "margin": 10.01,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "\u26a0\ufe0f INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 250,404,222 VND, leaving only 469,595,778 VND. Need 5,214kg more which costs at least 635,074,727 VND. Running in best-effort mode to complete the order.",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Truck 9.5m - Existing Body (378.7M, 20%)",
+      "status": "warning",
+      "items": 6,
+      "weight": 3896.2,
+      "margin": 15.02,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "\u26a0\ufe0f INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 231,779,076 VND, leaving only 90,115,924 VND. Need 1,409kg more which costs at least 149,827,335 VND. Running in best-effort mode to complete the order.",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Mooc 12m - Very Low Budget (350M, 15%)",
+      "status": "warning",
+      "items": 6,
+      "weight": 2042.97,
+      "margin": 10.03,
+      "weightOk": false,
+      "marginOk": true,
+      "warning": "\u26a0\ufe0f INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 249,075,831 VND, leaving only 65,924,169 VND. Need 5,160kg more which costs at least 628,064,703 VND. Running in best-effort mode to complete the order.",
+      "outcome": "\u26a0\ufe0f WARNING (fallback)"
+    },
+    {
+      "test": "Container 20ft - R2DX 500M 20%",
+      "status": "ok",
+      "items": 7,
+      "weight": 3674.4,
+      "margin": 20.0,
+      "weightOk": true,
+      "marginOk": true,
+      "warning": null,
+      "outcome": "\u2705 OK"
+    }
+  ]
+}

@@ -52,6 +52,7 @@ class OptimizerV2:
         targetProfitMargin: float = 0.20,
         buildContainer: bool = True,
         existingContainerWeight: float = 0,
+        relaxedMode: bool = False,
     ) -> dict[str, Any]:
         """
         Main optimization function using 4-phase approach.
@@ -62,10 +63,14 @@ class OptimizerV2:
                            has a truck body and only needs walking floor installed.
             existingContainerWeight: Weight of user's existing container in kg.
                                     Only used when buildContainer=False.
+            relaxedMode: When True, do best-effort optimization even when strict
+                        constraints cannot be met. Returns warning instead of error.
         """
         logger.info("=" * 60)
         logger.info(f"🚀 OptimizerV2: {containerType}, {containerLength}m")
         logger.info(f"   Receipt: {receiptPrice:,.0f}, Target margin: {targetProfitMargin*100:.0f}%")
+        if relaxedMode:
+            logger.info(f"   ⚠️ Relaxed mode: Will do best-effort even if constraints impossible")
         if containerType == "thung_xe_tai" and not buildContainer:
             logger.info(f"   📋 buildContainer=False: Skipping container structure build")
             if existingContainerWeight > 0:
@@ -187,47 +192,73 @@ class OptimizerV2:
         )
         
         feasibility = self.feasibilityChecker.checkFeasibility(
-            bounds, currentCost, currentWeight, materials, usedQty
+            bounds, currentCost, currentWeight, materials, usedQty, relaxedMode
         )
         
+        # Track if we're in best-effort mode due to relaxed feasibility
+        feasibilityWarning = feasibility.reason if feasibility.isWarning else None
+        
         if not feasibility.feasible:
-            logger.error(f"❌ Infeasible: {feasibility.reason}")
-            logger.error(f"   Fixed items cost: {currentCost:,.0f} VND")
-            logger.error(f"   Fixed items weight: {currentWeight:,.0f} kg")
-            logger.error(f"   Max budget allowed: {bounds.maxCost:,.0f} VND")
-            logger.error(f"   Min weight required: {bounds.minWeight:,.0f} kg")
-            logger.error(f"   Max weight allowed: {bounds.maxWeight:,.0f} kg")
-            logger.error(f"   Target margin: {bounds.targetMargin*100:.0f}%")
-            logger.error(f"   Receipt price: {receiptPrice:,.0f} VND")
-            logger.error("=" * 60)
-            logger.error("💡 SUGGESTIONS:")
-            if currentCost > bounds.maxCost:
-                logger.error("   → Increase receipt price significantly")
-                logger.error("   → Use cheaper walking floor model (KMD < KSD < R2DX)")
-                logger.error("   → Decrease target margin to allow more spending")
-            else:
-                # Budget OK but can't reach weight
-                logger.error("   → Increase receipt price to allow more material purchase")
-                logger.error("   → Use cheaper walking floor model to free up budget")
-                logger.error("   → Decrease target margin to allow more spending on materials")
-            logger.error("=" * 60)
+            # Auto-fallback: If normal mode fails, automatically retry with relaxed mode
+            if not relaxedMode:
+                logger.warning(f"⚠️ Normal mode infeasible: {feasibility.reason}")
+                logger.warning(f"   Auto-enabling relaxed mode for best-effort result...")
+                
+                # Retry feasibility check with relaxed mode
+                feasibility = self.feasibilityChecker.checkFeasibility(
+                    bounds, currentCost, currentWeight, materials, usedQty, relaxedMode=True
+                )
+                feasibilityWarning = feasibility.reason if feasibility.isWarning else None
+                
+                # Add inventory shortage warning
+                if feasibilityWarning:
+                    feasibilityWarning = (
+                        f"⚠️ INVENTORY SHORTAGE: {feasibilityWarning}. "
+                        f"Running in best-effort mode to complete the order."
+                    )
             
-            # Return empty result with diagnostic info
-            diagnosticInfo = {
-                "fixedItemsCost": currentCost,
-                "fixedItemsWeight": currentWeight,
-                "fixedItemsCount": len(allItems),
-                "maxBudget": bounds.maxCost,
-                "minWeight": bounds.minWeight,
-                "maxWeight": bounds.maxWeight,
-                "remainingBudget": bounds.maxCost - currentCost,
-                "weightNeeded": bounds.minWeight - currentWeight,
-            }
-            return self._buildResult(
-                [], 0, 0, receiptPrice, bounds,
-                containerBuilt, error=feasibility.reason,
-                diagnosticInfo=diagnosticInfo
-            )
+            # If still not feasible even in relaxed mode (shouldn't happen, but safety check)
+            if not feasibility.feasible:
+                logger.error(f"❌ Infeasible even in relaxed mode: {feasibility.reason}")
+                logger.error(f"   Fixed items cost: {currentCost:,.0f} VND")
+                logger.error(f"   Fixed items weight: {currentWeight:,.0f} kg")
+                logger.error(f"   Max budget allowed: {bounds.maxCost:,.0f} VND")
+                logger.error(f"   Min weight required: {bounds.minWeight:,.0f} kg")
+                logger.error(f"   Max weight allowed: {bounds.maxWeight:,.0f} kg")
+                logger.error(f"   Target margin: {bounds.targetMargin*100:.0f}%")
+                logger.error(f"   Receipt price: {receiptPrice:,.0f} VND")
+                logger.error("=" * 60)
+                logger.error("💡 SUGGESTIONS:")
+                if currentCost > bounds.maxCost:
+                    logger.error("   → Increase receipt price significantly")
+                    logger.error("   → Use cheaper walking floor model (KMD < KSD < R2DX)")
+                    logger.error("   → Decrease target margin to allow more spending")
+                else:
+                    logger.error("   → Increase receipt price to allow more material purchase")
+                    logger.error("   → Use cheaper walking floor model to free up budget")
+                    logger.error("   → Decrease target margin to allow more spending on materials")
+                logger.error("=" * 60)
+                
+                diagnosticInfo = {
+                    "fixedItemsCost": currentCost,
+                    "fixedItemsWeight": currentWeight,
+                    "fixedItemsCount": len(allItems),
+                    "maxBudget": bounds.maxCost,
+                    "minWeight": bounds.minWeight,
+                    "maxWeight": bounds.maxWeight,
+                    "remainingBudget": bounds.maxCost - currentCost,
+                    "weightNeeded": bounds.minWeight - currentWeight,
+                }
+                return self._buildResult(
+                    [], 0, 0, receiptPrice, bounds,
+                    containerBuilt, error=feasibility.reason,
+                    diagnosticInfo=diagnosticInfo
+                )
+        
+        # Log warning if in relaxed/best-effort mode
+        if feasibilityWarning:
+            logger.warning(f"⚠️ Best-effort mode: {feasibilityWarning}")
+            logger.warning(f"   Continuing to fill what we can...")
         
         # ─────────────────────────────────────────────────────────────
         # PHASE 2: Weight-first filling (reach minWeight)
@@ -296,7 +327,8 @@ class OptimizerV2:
         # Build final result
         # ─────────────────────────────────────────────────────────────
         return self._buildResult(
-            allItems, currentWeight, currentCost, receiptPrice, bounds, containerBuilt
+            allItems, currentWeight, currentCost, receiptPrice, bounds, containerBuilt,
+            feasibilityWarning=feasibilityWarning,
         )
 
     def _getPrebuiltContainer(self, containerType: str) -> dict[str, Any] | None:
@@ -350,6 +382,7 @@ class OptimizerV2:
         containerBuilt: bool,
         error: str = None,
         diagnosticInfo: dict = None,
+        feasibilityWarning: str = None,
     ) -> dict[str, Any]:
         """
         Build the final result dictionary.
@@ -378,6 +411,9 @@ class OptimizerV2:
         logger.info("=" * 60)
         if error:
             logger.info(f"❌ Final: IMPOSSIBLE - {error}")
+        elif feasibilityWarning:
+            logger.info(f"⚠️ Final (relaxed mode): weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
+            logger.info(f"   Warning: {feasibilityWarning}")
         else:
             logger.info(f"✅ Final: weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
         logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
@@ -403,6 +439,7 @@ class OptimizerV2:
                 "marginOk": marginOk,
             },
             "error": error,
+            "warning": feasibilityWarning,  # Relaxed mode warning
         }
         
         # Add diagnostic info for impossible cases

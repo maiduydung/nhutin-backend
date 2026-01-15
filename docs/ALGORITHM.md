@@ -238,6 +238,62 @@ Common failure modes:
 2. **Inventory insufficient**: Not enough materials to reach weight target
 3. **Conflicting constraints**: Weight limit reached before cost target (reported as warning, provides best-effort result)
 
+## Auto-Fallback (Best-Effort Mode)
+
+When inventory is insufficient to meet constraints (e.g., no cheap steel available), the algorithm **automatically** falls back to best-effort mode. No frontend changes needed.
+
+**How it works:**
+1. Normal optimization tries to meet all constraints
+2. If feasibility check fails → auto-enable relaxed mode
+3. Fill as much material as budget allows
+4. Return result with `status: "warning"` instead of error
+
+**Example scenario:**
+- Steel inventory is depleted (only expensive aluminum available)
+- Budget can't buy enough aluminum to reach weight target
+- System auto-fallbacks and fills what it can afford
+
+**Response with auto-fallback warning:**
+```json
+{
+  "status": "warning",
+  "warning": "⚠️ INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 269M, leaving 117M. Running in best-effort mode to complete the order.",
+  "items": [
+    {"type": "walking_floor_ksd", "quantity": 1, "weight": 503},
+    {"type": "aluminum", "quantity": 797, "weight": 797},
+    {"type": "hydraulic_oil", "quantity": 1, "weight": 200},
+    {"type": "galvanized_sheet", "quantity": 20, "weight": 217},
+    {"type": "stainless_steel", "quantity": 13, "weight": 13},
+    {"type": "aluminum", "quantity": 867, "weight": 867}
+  ],
+  "totalWeight": 2596,
+  "constraints": {
+    "weightOk": false,
+    "marginOk": true
+  }
+}
+```
+
+**Manual override:**
+You can also explicitly enable relaxed mode via `relaxedMode: true` parameter:
+
+```json
+{
+  "containerType": "mooc_long",
+  "containerLength": 15.0,
+  "itemModelType": "KSD",
+  "receiptPrice": 430000000,
+  "targetProfitMargin": 0.15,
+  "relaxedMode": true
+}
+```
+
+**Key points:**
+- Frontend doesn't need to know about inventory issues
+- Backend handles gracefully with auto-fallback
+- Warning message clearly explains what materials are missing
+- Client gets a usable BOM instead of empty error response
+
 ## References
 
 - [docs/comments.md](comments.md) - Original analysis and algorithm design

@@ -46,6 +46,12 @@ class UserInput(BaseModel):
         description="Weight of user's existing container/truck body in kg. "
                     "Only used when buildContainer=False. Typical truck body: 1500-2500 kg."
     )
+    relaxedMode: bool = Field(
+        default=False,
+        description="When True, optimizer will do best-effort filling even when strict "
+                    "constraints cannot be met (e.g., insufficient inventory to reach weight "
+                    "target). Returns result with warning status instead of failing."
+    )
 
     def toDict(self) -> dict[str, Any]:
         return self.model_dump()

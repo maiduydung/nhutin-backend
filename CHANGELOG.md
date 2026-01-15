@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-01-15
+
+### Added
+
+#### Auto-Fallback to Best-Effort Mode
+- **New Feature**: When inventory is insufficient to meet constraints, system automatically retries with best-effort mode instead of returning an error
+- No frontend changes needed - backend handles inventory shortages gracefully
+- Returns `status: "warning"` with clear explanation about inventory shortage
+
+**Before (v2.1.0):**
+```json
+{
+  "status": "error",
+  "error": "Insufficient budget to reach weight target...",
+  "items": []
+}
+```
+
+**After (v2.2.0):**
+```json
+{
+  "status": "warning",
+  "warning": "⚠️ INVENTORY SHORTAGE: Insufficient budget to reach weight target. Fixed items cost 269M, leaving 117M. Running in best-effort mode to complete the order.",
+  "items": [... 6 items filled with available materials ...],
+  "constraints": {
+    "weightOk": false,
+    "marginOk": true
+  }
+}
+```
+
+### How It Works
+1. Normal optimization attempts to meet all constraints
+2. If feasibility check fails (e.g., no steel in inventory)
+3. System automatically enables relaxed mode
+4. Fills as much as budget allows with available materials (e.g., aluminum)
+5. Returns result with warning instead of error
+
+### Use Case
+When steel inventory is depleted but client needs the build immediately:
+- Frontend sends normal request (no changes needed)
+- Backend detects constraint failure
+- Auto-fallbacks to best-effort mode
+- Returns BOM filled with available materials + warning
+- User sees warning explaining the inventory shortage
+
+### API Changes
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `relaxedMode` | `bool` | `false` | Manual override to force best-effort mode (optional) |
+
+### Response Changes
+- Added `warning` field to response (null when no issues, contains inventory shortage message when auto-fallback triggered)
+
+### Test Results
+| Test Case | Status | Items | Weight | Margin |
+|-----------|--------|-------|--------|--------|
+| Mooc 15m - 430M 15% | ⚠️ WARNING | 6 | 2,596 kg | 10.0% |
+| Mooc 12m - 350M 15% | ⚠️ WARNING | 6 | 2,043 kg | 10.0% |
+| Container 20ft - 400M 20% | ✅ OK | 8 | 3,538 kg | 20.0% |
+| Container 20ft - R2DX 500M 20% | ✅ OK | 7 | 3,674 kg | 20.0% |
+
+### Files Modified
+- `models/user_input.py` - Added optional `relaxedMode` field
+- `services/feasibility_checker.py` - Added relaxed mode support with `isWarning` flag
+- `services/optimizer.py` - Auto-fallback logic, handle warnings, include in response
+- `function_app.py` - Include warning in response
+- `docs/ALGORITHM.md` - Documentation for relaxed mode
+- `requests.http` - Added auto-fallback test cases
+- `tests/test_auto_fallback.py` - Comprehensive test suite (8 tests, all passing)
+
+---
+
 ## [2.1.0] - 2026-01-14
 
 ### Added
