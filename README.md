@@ -692,11 +692,12 @@ Supports two Vietnamese date formats:
   - Example: `"Ngày 27 tháng 11 năm 2024"` → `datetime(2024, 11, 27)`
   - Regex: `r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'`
 
-- **Monthly format**: `"Tháng MM năm YYYY"` (uses day 1)
-  - Example: `"Tháng 1 năm 2026"` → `datetime(2026, 1, 1)`
+- **Monthly format**: `"Tháng MM năm YYYY"` (uses current day)
+  - Example: `"Tháng 1 năm 2026"` on Jan 17 → `datetime(2026, 1, 17)`
   - Regex: `r'Tháng\s+(\d+)\s+năm\s+(\d+)'`
 
 - **Search**: Searches through first 5 rows to find date pattern
+- **Logging**: Shows each row being searched and the parsed format
 - **Fallback**: Uses current date if no pattern found
 
 ### Data Validation

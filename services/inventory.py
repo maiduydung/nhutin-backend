@@ -11,13 +11,13 @@ class Inventory:
     """Handles inventory data ingestion from Excel files."""
 
     @staticmethod
-    def _extractDateFromVietnameseFormat(dateString: str) -> datetime | None:
+    def _extractDateFromVietnameseFormat(dateString: str) -> tuple[datetime | None, str]:
         """
         Extract date from Vietnamese format.
         Supports:
           - 'Ngày DD tháng MM năm YYYY' (daily reports)
-          - 'Tháng MM năm YYYY' (monthly reports - uses day 1)
-        Returns a datetime object, or None if not found.
+          - 'Tháng MM năm YYYY' (monthly reports - uses current day)
+        Returns a tuple of (datetime object or None, format description).
         """
         try:
             # Try daily format first: "Ngày DD tháng MM năm YYYY"
@@ -28,21 +28,25 @@ class Inventory:
                 day = int(dailyMatch.group(1))
                 month = int(dailyMatch.group(2))
                 year = int(dailyMatch.group(3))
-                return datetime(year, month, day)
+                logger.info(f"   📆 Parsed daily format: day={day}, month={month}, year={year}")
+                return datetime(year, month, day), "daily"
             
-            # Try monthly format: "Tháng MM năm YYYY" (uses day 1)
+            # Try monthly format: "Tháng MM năm YYYY" (uses current day)
             monthlyPattern = r'Tháng\s+(\d+)\s+năm\s+(\d+)'
             monthlyMatch = re.search(monthlyPattern, dateString)
             
             if monthlyMatch:
                 month = int(monthlyMatch.group(1))
                 year = int(monthlyMatch.group(2))
-                return datetime(year, month, 1)  # Use first day of month
+                # Use current day of month for monthly reports
+                currentDay = datetime.now().day
+                logger.info(f"   📆 Parsed monthly format: month={month}, year={year}, using current day={currentDay}")
+                return datetime(year, month, currentDay), "monthly"
             
-            return None  # No date pattern found
+            return None, "none"  # No date pattern found
         except Exception as e:
-            logger.error(f"Error parsing date: {e}")
-            return None
+            logger.error(f"❌ Error parsing date: {e}")
+            return None, "error"
 
     @staticmethod
     def _safeInt(value) -> int:
@@ -126,24 +130,32 @@ class Inventory:
             Inventory._wipeDatabase(cursor)
             
             # Read first 5 rows to find the date (could be in different rows)
+            logger.info("🔍 Searching for date in Excel header rows...")
             dfHeader = pd.read_excel(filePath, sheet_name=0, header=None, nrows=5)
             recordDate = None
+            dateFormat = None
             
             # Search through rows 0-4 for date pattern
             for i in range(len(dfHeader)):
                 cellValue = str(dfHeader.iloc[i, 0]) if pd.notna(dfHeader.iloc[i, 0]) else ""
-                parsedDate = Inventory._extractDateFromVietnameseFormat(cellValue)
+                if not cellValue.strip():
+                    logger.debug(f"   Row {i}: (empty)")
+                    continue
+                    
+                logger.info(f"   🔎 Row {i}: \"{cellValue[:60]}{'...' if len(cellValue) > 60 else ''}\"")
+                parsedDate, dateFormat = Inventory._extractDateFromVietnameseFormat(cellValue)
+                
                 if parsedDate is not None:
                     recordDate = parsedDate
-                    logger.info(f"📅 Found date in row {i}: {recordDate.date()}")
+                    logger.info(f"   ✅ Found date in row {i} ({dateFormat} format): {recordDate.date()}")
                     break
             
             # Fallback to current date if not found
             if recordDate is None:
                 recordDate = datetime.now()
-                logger.warning("⚠️ No date found in header rows, using current date")
+                logger.warning("⚠️ No date pattern found in header rows, using current date as fallback")
             
-            logger.info(f"📅 Record date: {recordDate.date()}")
+            logger.info(f"📅 Using record date: {recordDate.date()}")
             
             # Read the actual data starting from row 6
             dfRaw = pd.read_excel(filePath, sheet_name=0, header=None, skiprows=5)
@@ -158,6 +170,7 @@ class Inventory:
             # 7: Imported Qty, 8: Imported Value
             # 9: Exported Qty, 10: Exported Value
             # 11: Final Qty, 12: Final Value
+            logger.info(f"📊 Reading data rows (skiprows=5)...")
             df = pd.DataFrame({
                 "code": dfRaw[1],
                 "name": dfRaw[2],
@@ -171,19 +184,33 @@ class Inventory:
                 "final_quantity": dfRaw[11],
                 "final_value": dfRaw[12],
             })
+            logger.info(f"   📋 Total rows in Excel: {len(df)}")
 
             priceRecordsInserted = 0
+            itemsProcessed = 0
+            rowsSkipped = 0
+            typeStats = {}
 
+            logger.info("🔄 Processing items...")
             for _, row in df.iterrows():
                 rawCode = str(row["code"]).strip() if pd.notna(row["code"]) else None
                 rawName = str(row["name"]).strip() if pd.notna(row["name"]) else None
                 rawUnit = str(row["unit"]).strip() if pd.notna(row["unit"]) else None
 
                 if not rawCode or not rawName:
+                    rowsSkipped += 1
                     continue  # Skip rows with missing critical info
+                
+                # Skip header rows that might have slipped through
+                if rawCode.lower() in ['mã hàng', 'ma hang', 'mã_hàng']:
+                    rowsSkipped += 1
+                    continue
 
                 # Normalize item data
                 normalized = ItemNormalizer.normalize(rawCode, rawName, rawUnit)
+                
+                # Track type statistics
+                typeStats[normalized.itemType] = typeStats.get(normalized.itemType, 0) + 1
 
                 # Upsert item with normalized data and type
                 cursor.execute(
@@ -256,9 +283,25 @@ class Inventory:
                 if exportPrice:
                     Inventory._insertPriceHistory(cursor, itemId, exportPrice, "export", recordDate)
                     priceRecordsInserted += 1
+                
+                itemsProcessed += 1
 
             connection.commit()
-            logger.info(f"✅ Inventory ingestion complete! Price records: {priceRecordsInserted}")
+            
+            # Log summary
+            logger.info("=" * 60)
+            logger.info("📊 INGESTION SUMMARY")
+            logger.info("=" * 60)
+            logger.info(f"   📅 Record date: {recordDate.date()}")
+            logger.info(f"   📋 Total Excel rows: {len(df)}")
+            logger.info(f"   ✅ Items processed: {itemsProcessed}")
+            logger.info(f"   ⏭️  Rows skipped: {rowsSkipped}")
+            logger.info(f"   💰 Price records: {priceRecordsInserted}")
+            logger.info("   📦 Items by type:")
+            for itemType, count in sorted(typeStats.items(), key=lambda x: -x[1]):
+                logger.info(f"      • {itemType}: {count}")
+            logger.info("=" * 60)
+            logger.info("✅ Inventory ingestion complete!")
 
         except Exception as e:
             connection.rollback()
