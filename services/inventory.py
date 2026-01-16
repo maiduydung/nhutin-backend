@@ -11,26 +11,51 @@ class Inventory:
     """Handles inventory data ingestion from Excel files."""
 
     @staticmethod
-    def _extractDateFromVietnameseFormat(dateString: str) -> datetime:
+    def _extractDateFromVietnameseFormat(dateString: str) -> datetime | None:
         """
-        Extract date from Vietnamese format: 'Ngày DD tháng MM năm YYYY'.
-        Returns a datetime object.
+        Extract date from Vietnamese format.
+        Supports:
+          - 'Ngày DD tháng MM năm YYYY' (daily reports)
+          - 'Tháng MM năm YYYY' (monthly reports - uses day 1)
+        Returns a datetime object, or None if not found.
         """
         try:
-            pattern = r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'
-            match = re.search(pattern, dateString)
+            # Try daily format first: "Ngày DD tháng MM năm YYYY"
+            dailyPattern = r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'
+            dailyMatch = re.search(dailyPattern, dateString)
             
-            if match:
-                day = int(match.group(1))
-                month = int(match.group(2))
-                year = int(match.group(3))
+            if dailyMatch:
+                day = int(dailyMatch.group(1))
+                month = int(dailyMatch.group(2))
+                year = int(dailyMatch.group(3))
                 return datetime(year, month, day)
-            else:
-                logger.warning(f"Could not parse date from: {dateString}, using current date")
-                return datetime.now()
+            
+            # Try monthly format: "Tháng MM năm YYYY" (uses day 1)
+            monthlyPattern = r'Tháng\s+(\d+)\s+năm\s+(\d+)'
+            monthlyMatch = re.search(monthlyPattern, dateString)
+            
+            if monthlyMatch:
+                month = int(monthlyMatch.group(1))
+                year = int(monthlyMatch.group(2))
+                return datetime(year, month, 1)  # Use first day of month
+            
+            return None  # No date pattern found
         except Exception as e:
-            logger.error(f"Error parsing date: {e}, using current date")
-            return datetime.now()
+            logger.error(f"Error parsing date: {e}")
+            return None
+
+    @staticmethod
+    def _safeInt(value) -> int:
+        """
+        Safely convert a value to int, handling NaN and None.
+        Returns 0 for NaN, None, or empty values.
+        """
+        if pd.isna(value) or value is None:
+            return 0
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
 
     @staticmethod
     def _calculateUnitPrice(value: int, quantity: int) -> Decimal | None:
@@ -100,27 +125,51 @@ class Inventory:
             # This ensures deleted items from the accounting software are also removed here
             Inventory._wipeDatabase(cursor)
             
-            # Read row 2 (index 1) to extract the date
-            dfDate = pd.read_excel(filePath, sheet_name=0, header=None, nrows=2)
-            dateString = str(dfDate.iloc[1, 0]) if len(dfDate) > 1 else ""
-            recordDate = Inventory._extractDateFromVietnameseFormat(dateString)
-            logger.info(f"📅 Extracted record date: {recordDate.date()}")
+            # Read first 5 rows to find the date (could be in different rows)
+            dfHeader = pd.read_excel(filePath, sheet_name=0, header=None, nrows=5)
+            recordDate = None
+            
+            # Search through rows 0-4 for date pattern
+            for i in range(len(dfHeader)):
+                cellValue = str(dfHeader.iloc[i, 0]) if pd.notna(dfHeader.iloc[i, 0]) else ""
+                parsedDate = Inventory._extractDateFromVietnameseFormat(cellValue)
+                if parsedDate is not None:
+                    recordDate = parsedDate
+                    logger.info(f"📅 Found date in row {i}: {recordDate.date()}")
+                    break
+            
+            # Fallback to current date if not found
+            if recordDate is None:
+                recordDate = datetime.now()
+                logger.warning("⚠️ No date found in header rows, using current date")
+            
+            logger.info(f"📅 Record date: {recordDate.date()}")
             
             # Read the actual data starting from row 6
             dfRaw = pd.read_excel(filePath, sheet_name=0, header=None, skiprows=5)
 
+            # Column mapping (0-indexed):
+            # 0: Warehouse name (ignored)
+            # 1: Code
+            # 2: Name
+            # 3: (empty column)
+            # 4: Unit
+            # 5: Initial Qty, 6: Initial Value
+            # 7: Imported Qty, 8: Imported Value
+            # 9: Exported Qty, 10: Exported Value
+            # 11: Final Qty, 12: Final Value
             df = pd.DataFrame({
                 "code": dfRaw[1],
                 "name": dfRaw[2],
-                "unit": dfRaw[3],
-                "initial_quantity": dfRaw[4],
-                "initial_value": dfRaw[5],
-                "imported_quantity": dfRaw[6],
-                "imported_value": dfRaw[7],
-                "exported_quantity": dfRaw[8],
-                "exported_value": dfRaw[9],
-                "final_quantity": dfRaw[10],
-                "final_value": dfRaw[11],
+                "unit": dfRaw[4],
+                "initial_quantity": dfRaw[5],
+                "initial_value": dfRaw[6],
+                "imported_quantity": dfRaw[7],
+                "imported_value": dfRaw[8],
+                "exported_quantity": dfRaw[9],
+                "exported_value": dfRaw[10],
+                "final_quantity": dfRaw[11],
+                "final_value": dfRaw[12],
             })
 
             priceRecordsInserted = 0
@@ -151,11 +200,15 @@ class Inventory:
                 )
                 itemId = cursor.fetchone()[0]
 
-                # Parse numeric values
-                importedQty = int(row["imported_quantity"] or 0)
-                importedVal = int(row["imported_value"] or 0)
-                exportedQty = int(row["exported_quantity"] or 0)
-                exportedVal = int(row["exported_value"] or 0)
+                # Parse numeric values using safe conversion (handles NaN)
+                initialQty = Inventory._safeInt(row["initial_quantity"])
+                initialVal = Inventory._safeInt(row["initial_value"])
+                importedQty = Inventory._safeInt(row["imported_quantity"])
+                importedVal = Inventory._safeInt(row["imported_value"])
+                exportedQty = Inventory._safeInt(row["exported_quantity"])
+                exportedVal = Inventory._safeInt(row["exported_value"])
+                finalQty = Inventory._safeInt(row["final_quantity"])
+                finalVal = Inventory._safeInt(row["final_value"])
 
                 # Upsert inventory record
                 cursor.execute(
@@ -181,14 +234,14 @@ class Inventory:
                     (
                         itemId,
                         recordDate.date(),
-                        int(row["initial_quantity"] or 0),
-                        int(row["initial_value"] or 0),
+                        initialQty,
+                        initialVal,
                         importedQty,
                         importedVal,
                         exportedQty,
                         exportedVal,
-                        int(row["final_quantity"] or 0),
-                        int(row["final_value"] or 0),
+                        finalQty,
+                        finalVal,
                     ),
                 )
 

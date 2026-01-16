@@ -9,6 +9,11 @@
 - Fixed `steel_u` pattern to match "THÉP U", "THÉP_U", and "THÉP HÌNH U160" (structural U-beam).
 - Fixed `steel_i` pattern to match "THÉP I", "THÉP_I", and "THÉP HÌNH I" (structural I-beam).
 - Added default units: `gear_pump` → `pcs`, `cutting_nozzle` → `pcs`, `fastener` → `pcs`.
+- Fixed NaN handling in numeric columns (was causing `cannot convert float NaN to integer` error).
+- Added `_safeInt()` helper to safely convert NaN/None values to 0.
+- Fixed date extraction to support monthly format "Tháng MM năm YYYY" (uses day 1).
+- Fixed Excel column mapping: unit is at column 4 (was incorrectly mapped to column 3).
+- Date extraction now searches through first 5 rows to find date pattern.
 - Updated README with new item types and classification examples.
 
 ## 2025-12-18

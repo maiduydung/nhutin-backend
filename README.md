@@ -670,25 +670,34 @@ Row 6+: [Data Rows]
 
 | Excel Column | Index | Field Name | Description |
 |--------------|-------|------------|-------------|
-| A | 0 | (ignored) | Row number or other metadata |
+| A | 0 | (ignored) | Warehouse name |
 | B | 1 | `code` | Item code |
 | C | 2 | `name` | Item name |
-| D | 3 | `unit` | Unit of measure |
-| E | 4 | `initial_quantity` | Opening stock quantity |
-| F | 5 | `initial_value` | Opening stock value (VND) |
-| G | 6 | `imported_quantity` | Received quantity |
-| H | 7 | `imported_value` | Received value (VND) |
-| I | 8 | `exported_quantity` | Issued quantity |
-| J | 9 | `exported_value` | Issued value (VND) |
-| K | 10 | `final_quantity` | Closing stock quantity |
-| L | 11 | `final_value` | Closing stock value (VND) |
+| D | 3 | (ignored) | Empty column |
+| E | 4 | `unit` | Unit of measure |
+| F | 5 | `initial_quantity` | Opening stock quantity |
+| G | 6 | `initial_value` | Opening stock value (VND) |
+| H | 7 | `imported_quantity` | Received quantity |
+| I | 8 | `imported_value` | Received value (VND) |
+| J | 9 | `exported_quantity` | Issued quantity |
+| K | 10 | `exported_value` | Issued value (VND) |
+| L | 11 | `final_quantity` | Closing stock quantity |
+| M | 12 | `final_value` | Closing stock value (VND) |
 
 ### Date Parsing
 
-- **Format**: `"Ngày DD tháng MM năm YYYY"`
-- **Example**: `"Ngày 27 tháng 11 năm 2024"` → `datetime(2024, 11, 27)`
-- **Regex Pattern**: `r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'`
-- **Fallback**: Uses current date if parsing fails
+Supports two Vietnamese date formats:
+
+- **Daily format**: `"Ngày DD tháng MM năm YYYY"`
+  - Example: `"Ngày 27 tháng 11 năm 2024"` → `datetime(2024, 11, 27)`
+  - Regex: `r'Ngày\s+(\d+)\s+tháng\s+(\d+)\s+năm\s+(\d+)'`
+
+- **Monthly format**: `"Tháng MM năm YYYY"` (uses day 1)
+  - Example: `"Tháng 1 năm 2026"` → `datetime(2026, 1, 1)`
+  - Regex: `r'Tháng\s+(\d+)\s+năm\s+(\d+)'`
+
+- **Search**: Searches through first 5 rows to find date pattern
+- **Fallback**: Uses current date if no pattern found
 
 ### Data Validation
 
