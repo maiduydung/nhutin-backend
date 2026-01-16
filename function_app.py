@@ -11,6 +11,7 @@ from config import logger
 from models.user_input import UserInput
 from services.database import Database
 from services.optimizer import OptimizerV2
+from services.notify import send_email
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 database = Database()
@@ -87,6 +88,11 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
                 "constraints": result.get("constraints", {}),
                 "diagnostic": result.get("diagnostic", {}),
             }
+            return func.HttpResponse(
+                body=json.dumps(response, default=str),
+                mimetype="application/json",
+                status_code=200,
+            )
         else:
             # Normal response with items
             response = {
@@ -103,6 +109,11 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
                 "warning": result.get("warning"),  # Relaxed mode warning
             }
         
+        if response.get("status") == "error":
+            send_email(subject="❌ Nhu Tin Bill of Materials Error", body=f"Error: {response.get('error')}, User Input: {userInput.model_dump_json()}")
+        elif response.get("status") == "warning":
+            send_email(subject="⚠️ Nhu Tin Bill of Materials Warning", body=f"Warning: {response.get('warning')}, User Input: {userInput.model_dump_json()}")
+
         return func.HttpResponse(
             body=json.dumps(response, default=str),
             mimetype="application/json",
@@ -111,6 +122,7 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception:
         logger.error(f"Error: {traceback.format_exc()}")
+        send_email(subject="Nhu Tin Bill of Materials Failed", body=traceback.format_exc())
         return func.HttpResponse(
             body=json.dumps({"status": "error", "message": traceback.format_exc()}),
             mimetype="application/json",

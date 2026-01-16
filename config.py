@@ -99,3 +99,8 @@ HYDRAULIC_PUMP_MAP = {
 
 HYDRAULIC_OIL_WEIGHT_KG = 200  # Full barrel ~200kg (oil + drum)
 HYDRAULIC_PUMP_WEIGHT_KG = 50  # Approximate pump weight
+
+# Emails
+SENDER_EMAIL = "maiduydungvn@gmail.com"
+SENDER_EMAIL_APP_PASSWORD = getConfig("SENDER_EMAIL_APP_PASSWORD")
+EMAILS = ["maiduydungvn@gmail.com"]
