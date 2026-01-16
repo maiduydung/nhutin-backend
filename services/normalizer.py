@@ -63,10 +63,33 @@ class ItemNormalizer:
         (r'engine.*oil|oil.*engine', 'hydraulic_oil'),
         (r'lubricant', 'hydraulic_oil'),
         
+        # Gear pumps (Bơm Bánh Răng) - must come BEFORE hydraulic_pump
+        (r'b[oơ]m.*b[aá]nh.*r[aă]ng', 'gear_pump'),
+        (r'gear.*pump|pump.*gear', 'gear_pump'),
+        
         # Hydraulic pumps (specific pump patterns only)
         # Note: "thuỷ" can be spelled as thủy (ủ+y) or thuỷ (u+ỷ)
         (r'b[oơ]m.*th[uủ][yỷ].*l[uự]c', 'hydraulic_pump'),
         (r'hydraulic.*pump|pump.*hydraulic', 'hydraulic_pump'),
+        
+        # Welding wire/consumables (Dây hàn)
+        (r'd[aâ]y.*h[aà]n', 'welding_wire'),
+        (r'welding.*wire|wire.*welding', 'welding_wire'),
+        (r'que.*h[aà]n', 'welding_wire'),  # welding rod
+        
+        # Cutting nozzles/tips (Bép cắt, Đầu cắt, Mỏ cắt - plasma cutting consumables)
+        (r'b[eé]p.*c[aắ]t', 'cutting_nozzle'),
+        (r'[đd][aầ]u.*c[aắ]t', 'cutting_nozzle'),
+        (r'm[oỏ].*c[aắ]t', 'cutting_nozzle'),
+        (r'cutting.*(nozzle|tip)', 'cutting_nozzle'),
+        (r'plasma.*(nozzle|tip|consumable)', 'cutting_nozzle'),
+        
+        # Fasteners (Lục giác, bu-lông, ốc vít)
+        (r'l[uụ]c.*gi[aá]c', 'fastener'),
+        (r'bu[\s-]*l[oô]ng', 'fastener'),
+        (r'[oố]c.*v[ií]t', 'fastener'),
+        (r'\bbolt\b|\bnut\b|\bscrew\b', 'fastener'),
+        (r'hex.*bolt|bolt.*hex', 'fastener'),
         
         # Controllers
         (r'h[oộ]p.*[đd]i[eề]u.*khi[eể]n', 'controller'),
@@ -88,8 +111,16 @@ class ItemNormalizer:
         (r'th[eé]p.*[oố]ng|thep.*ong', 'steel_pipe'),
         (r'th[eé]p.*t[aấ]m|thep.*tam', 'steel_plate'),
         (r'th[eé]p.*vu[oô]ng|thep.*vuong', 'steel_square'),
-        (r'th[eé]p.*u\d|thepu|thép\s*u', 'steel_u'),
-        (r'th[eé]p.*i\d|thepi', 'steel_i'),
+        # Steel U - matches "THÉP U100", "THÉP U", "THÉP_U100", "THÉP HÌNH U160", etc.
+        (r'th[eé]p[\s_]*h[iì]nh[\s_]*u', 'steel_u'),  # THÉP HÌNH U160, THÉP_HÌNH_U
+        (r'th[eé]p[\s_]*u[\s_]*\d', 'steel_u'),  # with number: THÉP U100, THÉP_U_100
+        (r'th[eé]p[\s_]+u\b', 'steel_u'),  # without number: THÉP U, THÉP_U (space/underscore required)
+        (r'thepu', 'steel_u'),
+        # Steel I - matches "THÉP I150", "THÉP I", "THÉP_I150", "THÉP HÌNH I200", etc.
+        (r'th[eé]p[\s_]*h[iì]nh[\s_]*i', 'steel_i'),  # THÉP HÌNH I200, THÉP_HÌNH_I
+        (r'th[eé]p[\s_]*i[\s_]*\d', 'steel_i'),  # with number: THÉP I150, THÉP_I_150
+        (r'th[eé]p[\s_]+i\b', 'steel_i'),  # without number: THÉP I, THÉP_I (space/underscore required)
+        (r'thepi', 'steel_i'),
         (r'\bthep\b|\bthép\b', 'steel'),
         
         # Galvanized sheet
@@ -111,6 +142,9 @@ class ItemNormalizer:
         'controller': 'set',
         'hydraulic_pump': 'pcs',
         'hydraulic_oil': 'barrel',
+        'gear_pump': 'pcs',
+        'cutting_nozzle': 'pcs',
+        'fastener': 'pcs',
     }
 
     # Unit normalization map (handles typos too)
@@ -285,8 +319,28 @@ def main():
         ("Engine Oil 10W40", "Engine Oil 10W40", "barrel"),
         ("Lubricant SAE 30", "Lubricant SAE 30", None),  # Should get default 'barrel'
         
-        # Equipment (should NOT be 'other')
+        # Gear pumps (Bơm Bánh Răng - different from hydraulic pump!)
+        ("Bơm_Bánh_Răng_105L-BI-4H3-2S", "Bơm Bánh Răng 105L-BI-4H3-2S-20BSP20-250", "pcs"),
+        ("gear_pump_test", "Gear Pump Model X", None),  # Should get default 'pcs'
+        
+        # Hydraulic pumps
         ("Bơm thuỷ lực", "Bơm thuỷ lực", "Cái"),
+        
+        # Welding wire (Dây hàn)
+        ("Dây_hàn_MAG_70S6_D1.0", "Dây hàn MAG 70S6 D1.0 15kg/cuộn RL250 GEMINI", "kg"),
+        ("Dây_hàn_mag_Gemini", "Dây hàn mag Gemini 70S6 D1.2 15kg/cuộn RL250", "kg"),
+        ("que_han_test", "Que hàn E6013", None),
+        
+        # Cutting nozzles (Bép cắt, Đầu cắt, Mỏ cắt)
+        ("Bép_cắt_P80_1.5", "Bép cắt P80 1.5 - Black Wolf", "pcs"),
+        ("Đầu_cắt_P80", "Đầu cắt P80 - Black wolf", None),  # Should get default 'pcs'
+        ("Mỏ_cắt_P80_6m", "Mỏ cắt P80 6m tốt", "pcs"),
+        
+        # Fasteners (Lục giác, bu-lông)
+        ("Lục_Giác_Col_Thép_12x40", "Lục Giác Col Thép 12x40", "Con"),
+        ("bu_long_M10", "Bu-lông M10x30", None),  # Should get default 'pcs'
+        
+        # Controllers
         ("hộp điều khiển chế tạo", "hộp điều khiển chế tạo", "Bộ"),
         
         # Walking floor - KMD (NULL unit should become 'set')
@@ -306,6 +360,12 @@ def main():
         # Steel types
         ("thephop", "THÉP HỘP", "kg"),
         ("thep tam 12 ly", "Thép tấm 12 ly", "kg"),
+        # Steel U - should match even without digit!
+        ("THÉP_U100_11122025", "THÉP U100 11122025", "kg"),
+        ("THÉP_U_11122025", "THÉP U 11122025", "kg"),  # No digit after U!
+        # Steel I
+        ("THÉP_I150_11122025", "THÉP I150 11122025", "kg"),
+        ("Thép_I200", "Thép I200", "kg"),
         
         # Others
         ("Nhôm thanh #000", "Nhôm thanh #000", "kg"),

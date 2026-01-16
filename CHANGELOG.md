@@ -1,5 +1,16 @@
 # Changelog
 
+## 2025-01-17
+- Added new item types for manufacturing consumables and equipment:
+  - `gear_pump` - Bơm Bánh Răng (gear pumps, different from hydraulic pumps)
+  - `welding_wire` - Dây hàn, Que hàn (welding wire/rods)
+  - `cutting_nozzle` - Bép cắt, Đầu cắt, Mỏ cắt (plasma cutting nozzles/tips)
+  - `fastener` - Lục giác, Bu-lông, Ốc vít (hex bolts, screws, fasteners)
+- Fixed `steel_u` pattern to match "THÉP U", "THÉP_U", and "THÉP HÌNH U160" (structural U-beam).
+- Fixed `steel_i` pattern to match "THÉP I", "THÉP_I", and "THÉP HÌNH I" (structural I-beam).
+- Added default units: `gear_pump` → `pcs`, `cutting_nozzle` → `pcs`, `fastener` → `pcs`.
+- Updated README with new item types and classification examples.
+
 ## 2025-12-18
 - Added new item type `hydraulic_oil` for lubricants and oils (e.g., Nhớt Hydraulic Oil, Engine Oil).
 - Fixed misclassification: "Hydraulic Oil" now correctly classified as `hydraulic_oil` instead of `hydraulic_pump`.

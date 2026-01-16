@@ -292,38 +292,50 @@ class NormalizedItem:
 2. **Burning Fuels**:
    - `burning_fuel`: Matches `badieu`, `bã điều`, `dau`, `dầu do`, `than`, `trauvien`, `trấu viên`
 
-3. **Hydraulic/Engine Oil** (checked before hydraulic_pump):
+3. **Hydraulic/Engine Oil** (checked before pumps):
    - `hydraulic_oil`: Matches `nhớt`, `hydraulic.*oil`, `engine.*oil`, `lubricant`
 
-4. **Hydraulic Equipment**:
+4. **Gear Pumps** (checked before hydraulic pumps):
+   - `gear_pump`: Matches `bơm.*bánh.*răng`, `gear.*pump`
+
+5. **Hydraulic Pumps**:
    - `hydraulic_pump`: Matches `bơm.*thuỷ.*lực`, `hydraulic.*pump`
 
-5. **Controllers**:
+6. **Welding Wire/Consumables**:
+   - `welding_wire`: Matches `dây.*hàn`, `que.*hàn`, `welding.*wire`
+
+7. **Cutting Nozzles/Tips** (plasma cutting consumables):
+   - `cutting_nozzle`: Matches `bép.*cắt`, `đầu.*cắt`, `mỏ.*cắt`, `plasma.*nozzle`
+
+8. **Fasteners** (bolts, screws, nuts):
+   - `fastener`: Matches `lục.*giác`, `bu-lông`, `ốc.*vít`, `bolt`, `nut`, `screw`
+
+9. **Controllers**:
    - `controller`: Matches `hộp.*điều.*khiển`, `controller`
 
-6. **Walking Floor Generic**:
-   - `walking_floor`: Matches `sàn.*di.*động`, `walking.*floor`, `keith`
+10. **Walking Floor Generic**:
+    - `walking_floor`: Matches `sàn.*di.*động`, `walking.*floor`, `keith`
 
-7. **Aluminum**:
-   - `aluminum`: Matches `nhôm`, `aluminum`, `aluminium`
+11. **Aluminum**:
+    - `aluminum`: Matches `nhôm`, `aluminum`, `aluminium`
 
-8. **Steel Types** (specific before general):
-   - `stainless_steel`: Matches `thép.*không.*gỉ`, `stainless`
-   - `steel_box`: Matches `thép.*hộp`, `thep.*hop`
-   - `steel_pipe`: Matches `thép.*ống`, `thep.*ong`
-   - `steel_plate`: Matches `thép.*tấm`, `thep.*tam`
-   - `steel_square`: Matches `thép.*vuông`, `thep.*vuong`
-   - `steel_u`: Matches `thép.*u\d`, `thepu`, `thép u`
-   - `steel_i`: Matches `thép.*i\d`, `thepi`
-   - `steel`: Matches `thep`, `thép` (fallback)
+12. **Steel Types** (specific before general):
+    - `stainless_steel`: Matches `thép.*không.*gỉ`, `stainless`
+    - `steel_box`: Matches `thép.*hộp`, `thep.*hop`
+    - `steel_pipe`: Matches `thép.*ống`, `thep.*ong`
+    - `steel_plate`: Matches `thép.*tấm`, `thep.*tam`
+    - `steel_square`: Matches `thép.*vuông`, `thep.*vuong`
+    - `steel_u`: Matches `thép_u100`, `thép u`, `thepu` (with or without number)
+    - `steel_i`: Matches `thép_i150`, `thép i`, `thepi` (with or without number)
+    - `steel`: Matches `thep`, `thép` (fallback)
 
-9. **Galvanized Sheet**:
-   - `galvanized_sheet`: Matches `tôn.*mạ.*kẽm`, `galvanized`
+13. **Galvanized Sheet**:
+    - `galvanized_sheet`: Matches `tôn.*mạ.*kẽm`, `galvanized`
 
-10. **Containers**:
+14. **Containers**:
     - `container`: Matches `vỏ.*container`, `container`
 
-11. **Other**:
+15. **Other**:
     - `other`: Default fallback for unclassified items
 
 **Pattern Matching Notes**:
@@ -701,7 +713,11 @@ Row 6+: [Data Rows]
 |------|-------------|----------|--------------|
 | `burning_fuel` | Fuel for burning/energy | Bã điều, Dầu DO, Than, Trấu viên | None |
 | `hydraulic_oil` | Lubricants and oils | Nhớt Hydraulic Oil, Engine Oil, Lubricant | `barrel` |
+| `gear_pump` | Gear pumps | Bơm Bánh Răng 105L-BI-4H3-2S | `pcs` |
 | `hydraulic_pump` | Hydraulic pumps | Bơm thuỷ lực | `pcs` |
+| `welding_wire` | Welding wire and rods | Dây hàn MAG 70S6, Que hàn E6013 | None |
+| `cutting_nozzle` | Plasma cutting nozzles/tips | Bép cắt P80, Đầu cắt P80, Mỏ cắt P80 | `pcs` |
+| `fastener` | Bolts, screws, and fasteners | Lục Giác Col Thép, Bu-lông M10, Ốc vít | `pcs` |
 | `controller` | Control boxes | hộp điều khiển chế tạo | `set` |
 | `walking_floor_ksd` | Keith Walking Floor KSD series | KSD 4.25, Sàn di động KSD | `set` |
 | `walking_floor_kmd` | Keith Walking Floor KMD series | KMD300 24X97MM | `set` |
@@ -714,8 +730,8 @@ Row 6+: [Data Rows]
 | `steel_pipe` | Steel pipes | Thép ống | None |
 | `steel_plate` | Steel plates | Thép tấm | None |
 | `steel_square` | Square steel | Thép vuông | None |
-| `steel_u` | U-shaped steel | Thép U | None |
-| `steel_i` | I-beam steel | Thép I | None |
+| `steel_u` | U-shaped steel | Thép U, THÉP U100 | None |
+| `steel_i` | I-beam steel | Thép I, THÉP I150 | None |
 | `galvanized_sheet` | Galvanized sheets | Tôn mạ kẽm | None |
 | `container` | Containers | Vỏ container | `set` |
 | `other` | Unclassified items | (fallback) | None |
