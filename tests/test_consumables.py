@@ -29,7 +29,8 @@ class TestConsumablesConfig:
         assert "welding_wire" in CONSUMABLE_TYPES
         assert "cutting_nozzle" in CONSUMABLE_TYPES
         assert "fastener" in CONSUMABLE_TYPES
-        assert "gear_pump" in CONSUMABLE_TYPES
+        # gear_pump is NOT a consumable - it's the same as hydraulic_pump (fixed item)
+        assert "gear_pump" not in CONSUMABLE_TYPES
 
     def test_consumable_weights_defined(self):
         """Verify weights are defined for all consumable types."""
@@ -42,9 +43,6 @@ class TestConsumablesConfig:
         # Cutting nozzle and fastener have negligible weight
         assert CONSUMABLE_WEIGHTS["cutting_nozzle"] == 0.0
         assert CONSUMABLE_WEIGHTS["fastener"] == 0.0
-        
-        # Gear pump has some weight
-        assert CONSUMABLE_WEIGHTS["gear_pump"] >= 0
 
     def test_consumables_specs_for_40ft(self):
         """Verify 40ft container consumables specs."""
@@ -109,15 +107,12 @@ class TestWeightCalculatorConsumables:
         )
         assert weight == 0  # Con/pcs with zero weight per unit
 
-    def test_gear_pump_weight_calculated(self, calculator):
-        """Gear pump should have defined weight."""
-        weight = calculator.calculateItemWeight(
-            itemType="gear_pump",
-            unit="pcs",
-            quantity=1,
-            itemName="Bơm Bánh Răng"
-        )
-        assert weight == CONSUMABLE_WEIGHTS["gear_pump"]
+    def test_gear_pump_is_not_consumable(self):
+        """gear_pump is NOT a consumable - it's same as hydraulic_pump (fixed item)."""
+        # gear_pump should not be in CONSUMABLE_TYPES
+        assert "gear_pump" not in CONSUMABLE_TYPES
+        # gear_pump should not be in CONSUMABLE_WEIGHTS
+        assert "gear_pump" not in CONSUMABLE_WEIGHTS
 
 
 class TestContainerBuilderConsumables:

@@ -105,7 +105,25 @@ class FixedItemsSelector:
             )
 
         if not result:
-            logger.warning("No hydraulic pump available")
+            # Try gear_pump as fallback (same thing as hydraulic_pump)
+            logger.warning("No hydraulic_pump found, trying gear_pump")
+            result = self.db.executeQuery(
+                """
+                SELECT DISTINCT ON (i.id)
+                    i.id, i.code, i.name, i.unit,
+                    CASE WHEN ir.final_quantity > 0 
+                         THEN ir.final_value::numeric / ir.final_quantity 
+                         ELSE 0 END as unit_price
+                FROM items i
+                JOIN inventory_records ir ON i.id = ir.item_id
+                WHERE i.type = 'gear_pump' AND ir.final_quantity > 0
+                ORDER BY i.id, ir.record_date DESC
+                LIMIT 1
+                """
+            )
+
+        if not result:
+            logger.warning("No pump available (checked both hydraulic_pump and gear_pump)")
             return None
 
         row = result[0]
@@ -118,7 +136,7 @@ class FixedItemsSelector:
             "code": row[1],
             "name": row[2],
             "unit": row[3],
-            "type": "hydraulic_pump",
+            "type": "pump",  # Generic type since it could be hydraulic_pump or gear_pump
             "quantity": 1,
             "unitPrice": unitPrice,
             "totalValue": unitPrice,

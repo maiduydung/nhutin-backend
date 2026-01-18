@@ -107,8 +107,8 @@ HYDRAULIC_PUMP_WEIGHT_KG = 50  # Approximate pump weight
 # - Welding wire: for welding steel frame (unit: kg, has weight)
 # - Cutting nozzles: for plasma cutting steel (unit: pcs, negligible weight)
 # - Fasteners: for assembling components (unit: Con/pcs, negligible weight)
-# - Gear pump: may be used as part of hydraulic system (unit: pcs)
-CONSUMABLE_TYPES = ["welding_wire", "cutting_nozzle", "fastener", "gear_pump"]
+# Note: gear_pump is NOT a consumable - it's the same as hydraulic_pump (handled in fixed_items)
+CONSUMABLE_TYPES = ["welding_wire", "cutting_nozzle", "fastener"]
 
 # Usage specs per container size (scaled by container length)
 # Base specs are for 40ft (12.192m) container
@@ -118,14 +118,12 @@ CONSUMABLES_SPECS = {
         "welding_wire_kg": 20,      # ~20kg of welding wire for 12m
         "cutting_nozzle_pcs": 3,    # ~3 cutting nozzles consumed
         "fastener_pcs": 100,        # ~100 fasteners used
-        "gear_pump_pcs": 0,         # Optional - user can include if needed
     },
     "20ft": {
         "length_m": 6.096,
         "welding_wire_kg": 10,      # ~10kg for 6m
         "cutting_nozzle_pcs": 2,    # ~2 nozzles
         "fastener_pcs": 50,         # ~50 fasteners
-        "gear_pump_pcs": 0,
     },
 }
 
@@ -134,7 +132,6 @@ CONSUMABLE_WEIGHTS = {
     "welding_wire": 1.0,      # 1kg per kg (unit is kg)
     "cutting_nozzle": 0.0,    # Negligible weight (pcs)
     "fastener": 0.0,          # Negligible weight (Con/pcs)
-    "gear_pump": 50.0,        # ~50kg per pump
 }
 
 # Emails

@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reason: In relaxed mode, we still fabricate using aluminum → still need to weld, cut, assemble
 - This ensures consumables contribute to cost/margin regardless of material availability
 
+### Pump Unification (hydraulic_pump = gear_pump)
+- `hydraulic_pump` and `gear_pump` are the same thing - only need 1 per order
+- `gear_pump` removed from consumables (was incorrectly classified)
+- `fixed_items.py` now tries `hydraulic_pump` first, falls back to `gear_pump` if unavailable
+- Pump type in BOM is now generic `"pump"` instead of specific type
+
 ### Files Modified
 - `config.py` - Added consumables configuration
 - `services/weight_calculator.py` - Added consumable weight handling

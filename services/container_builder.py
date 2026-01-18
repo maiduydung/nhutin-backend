@@ -42,6 +42,9 @@ class ContainerBuilder:
         """
         Calculate consumables needed based on container size and length.
         Scales from base specs (40ft = 12.192m) to actual container length.
+        
+        Note: gear_pump is NOT a consumable - it's the same as hydraulic_pump
+        and is handled in fixed_items.py
         """
         baseSpec = CONSUMABLES_SPECS.get(containerSize, CONSUMABLES_SPECS["40ft"])
         baseLength = baseSpec["length_m"]
@@ -51,7 +54,6 @@ class ContainerBuilder:
             "welding_wire": baseSpec["welding_wire_kg"] * scaleFactor,
             "cutting_nozzle": max(1, int(baseSpec["cutting_nozzle_pcs"] * scaleFactor)),
             "fastener": max(10, int(baseSpec["fastener_pcs"] * scaleFactor)),
-            "gear_pump": baseSpec.get("gear_pump_pcs", 0),
         }
 
     def canBuildContainer(self, containerSize: str) -> dict[str, Any]:
@@ -196,7 +198,6 @@ class ContainerBuilder:
             "welding_wire": neededQty["welding_wire"] * scaleFactor,
             "cutting_nozzle": max(1, int(neededQty["cutting_nozzle"] * scaleFactor)),
             "fastener": max(5, int(neededQty["fastener"] * scaleFactor)),
-            "gear_pump": 0,  # Don't scale gear pump
         }
         
         for consumableType, qty in scaledNeeded.items():
@@ -390,12 +391,8 @@ class ContainerBuilder:
         totalCost += fastenerResult["totalCost"]
         totalWeight += fastenerResult["totalWeight"]
         
-        # Get gear pump (optional - only if specified in specs)
-        if neededQty.get("gear_pump", 0) > 0:
-            pumpResult = self._getConsumableItem("gear_pump", neededQty["gear_pump"])
-            items.extend(pumpResult["items"])
-            totalCost += pumpResult["totalCost"]
-            totalWeight += pumpResult["totalWeight"]
+        # Note: gear_pump is NOT fetched here - it's the same as hydraulic_pump
+        # and is handled in fixed_items.py (only need 1 pump per order)
         
         if items:
             logger.info(
