@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-01-18
+
+### Added
+
+#### Consumables Integration in Container Building
+- **New Feature**: Consumables (welding wire, cutting nozzles, fasteners, gear pump) are now automatically included when building containers from materials
+- These items carry value and help hit the profit margin target
+- Welding wire adds weight (1kg/kg), other consumables have negligible weight but add cost
+
+**Consumable Types:**
+| Type | Unit | Has Weight | Description |
+|------|------|------------|-------------|
+| `welding_wire` | kg | ✅ Yes | For welding steel frame |
+| `cutting_nozzle` | pcs | ❌ No | For plasma cutting steel |
+| `fastener` | Con/pcs | ❌ No | For assembly |
+| `gear_pump` | pcs | ~50kg | Optional pump |
+
+**Usage Per Container (scales with length):**
+| Size | Welding Wire | Cutting Nozzles | Fasteners |
+|------|-------------|-----------------|-----------|
+| 20ft/6m | ~10 kg | ~2 pcs | ~50 pcs |
+| 40ft/12m | ~20 kg | ~3 pcs | ~100 pcs |
+| 15m | ~25 kg | ~4 pcs | ~120 pcs |
+
+### Configuration
+- Added `CONSUMABLE_TYPES` list in `config.py`
+- Added `CONSUMABLES_SPECS` dict with usage per container size
+- Added `CONSUMABLE_WEIGHTS` dict for weight calculation
+
+### How It Works
+1. When building container from materials (mooc_long, thung_xe_tai, or no pre-built container)
+2. System calculates consumables needed based on container length
+3. Fetches consumables from inventory (cheapest first)
+4. Adds to BOM with `forContainerBuild: true` and `isConsumable: true` flags
+5. Cost contributes to margin, welding wire contributes to weight
+
+### Important: Consumables Always Added When Building
+- Consumables are added **even if steel build fails** (low steel inventory)
+- Reason: In relaxed mode, we still fabricate using aluminum → still need to weld, cut, assemble
+- This ensures consumables contribute to cost/margin regardless of material availability
+
+### Files Modified
+- `config.py` - Added consumables configuration
+- `services/weight_calculator.py` - Added consumable weight handling
+- `services/container_builder.py` - Added `_getConsumables()` method
+- `services/optimizer.py` - Fixed `containerBuiltFromMaterials` flag to only be True when build succeeds
+- `tests/test_consumables.py` - Comprehensive test suite (32 tests)
+- `tests/test_optimizer_v2.py` - Updated tests to handle low inventory scenarios
+
+### Bug Fix
+- Fixed `containerBuiltFromMaterials` flag - now correctly returns `False` when container build fails due to insufficient steel inventory
+
+---
+
 ## [2.2.0] - 2026-01-15
 
 ### Added

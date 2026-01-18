@@ -116,7 +116,6 @@ class OptimizerV2:
         
         if shouldBuildContainer:
             # Mooc Long / Thung Xe Tai: Build structure from materials
-            containerBuilt = True
             containerSize = "40ft"
             self.containerBuilder.setSlatParams(slatType, thickness, containerLength)
             
@@ -129,6 +128,7 @@ class OptimizerV2:
             )
             
             if buildResult["success"]:
+                containerBuilt = True  # Only set True when structural build succeeds
                 for item in buildResult["items"]:
                     allItems.append(item)
                     usedQty[item["id"]] = usedQty.get(item["id"], 0) + item["quantity"]
@@ -138,6 +138,26 @@ class OptimizerV2:
                 currentWeight += buildResult["totalWeight"]
                 currentCost += buildResult["totalCost"]
                 logger.info(f"Phase 1b: Built container structure: +{buildResult['totalWeight']:.0f}kg, +{buildResult['totalCost']:,.0f}")
+            else:
+                # Structural build failed (low steel) but we still use consumables
+                # because we're still fabricating (welding aluminum, cutting, etc.)
+                logger.info(f"Phase 1b: Steel build failed, but adding consumables for fabrication")
+            
+            # ALWAYS add consumables when building - even if steel build fails
+            # We're still welding, cutting, and assembling (maybe aluminum instead of steel)
+            consumablesResult = self.containerBuilder.getConsumables(containerSize)
+            if consumablesResult["items"]:
+                for item in consumablesResult["items"]:
+                    # Don't double-add if already included in buildResult
+                    if item["id"] not in excludeIds:
+                        allItems.append(item)
+                        usedQty[item["id"]] = usedQty.get(item["id"], 0) + item["quantity"]
+                        excludeIds.add(item["id"])
+                        logger.info(f"   🔧 Consumable: {item['type']}: {item.get('quantity',1):.1f} x {item['unitPrice']:,.0f} = {item['totalValue']:,.0f}")
+                
+                currentWeight += consumablesResult["totalWeight"]
+                currentCost += consumablesResult["totalCost"]
+                logger.info(f"Phase 1c: Added consumables: +{consumablesResult['totalWeight']:.0f}kg, +{consumablesResult['totalCost']:,.0f}")
         elif containerType == "thung_xe_tai" and not buildContainer:
             # User already has truck body, skip container building
             # Add the existing container weight to current weight (no cost - already owned)
@@ -158,7 +178,6 @@ class OptimizerV2:
                 logger.info(f"Phase 1b: Using pre-built container: +{prebuiltContainer['weight']:.0f}kg")
             else:
                 # No pre-built, build from materials
-                containerBuilt = True
                 containerSize = "40ft" if "40" in containerType else "20ft"
                 self.containerBuilder.setSlatParams(slatType, thickness, containerLength)
                 
@@ -171,6 +190,7 @@ class OptimizerV2:
                 )
                 
                 if buildResult["success"]:
+                    containerBuilt = True  # Only set True when structural build succeeds
                     for item in buildResult["items"]:
                         allItems.append(item)
                         usedQty[item["id"]] = usedQty.get(item["id"], 0) + item["quantity"]
@@ -178,6 +198,22 @@ class OptimizerV2:
                     
                     currentWeight += buildResult["totalWeight"]
                     currentCost += buildResult["totalCost"]
+                else:
+                    # Structural build failed but we still use consumables
+                    logger.info(f"Phase 1b: Steel build failed for {containerSize}, but adding consumables")
+                
+                # ALWAYS add consumables when building from materials
+                consumablesResult = self.containerBuilder.getConsumables(containerSize)
+                if consumablesResult["items"]:
+                    for item in consumablesResult["items"]:
+                        if item["id"] not in excludeIds:
+                            allItems.append(item)
+                            usedQty[item["id"]] = usedQty.get(item["id"], 0) + item["quantity"]
+                            excludeIds.add(item["id"])
+                            logger.info(f"   🔧 Consumable: {item['type']}: {item.get('quantity',1):.1f} x {item['unitPrice']:,.0f} = {item['totalValue']:,.0f}")
+                    
+                    currentWeight += consumablesResult["totalWeight"]
+                    currentCost += consumablesResult["totalCost"]
         
         logger.info(f"After Phase 1: weight={currentWeight:.0f}kg, cost={currentCost:,.0f}")
         

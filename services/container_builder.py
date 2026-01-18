@@ -1,11 +1,18 @@
 """
 Container Builder Service.
 Builds containers from raw materials when pre-built containers unavailable.
+Includes consumables (welding wire, cutting nozzles, fasteners) used during fabrication.
 """
 from typing import Any
 from services.database import Database
 from services.weight_calculator import WeightCalculator
-from config import logger, CONTAINER_BUILD_SPECS
+from config import (
+    logger,
+    CONTAINER_BUILD_SPECS,
+    CONSUMABLES_SPECS,
+    CONSUMABLE_TYPES,
+    CONSUMABLE_WEIGHTS,
+)
 
 
 class ContainerBuilder:
@@ -30,6 +37,22 @@ class ContainerBuilder:
             self.containerLength, self.slatType, self.thickness, self.db
         )
         return weight
+
+    def _calculateConsumablesNeeded(self, containerSize: str) -> dict[str, float]:
+        """
+        Calculate consumables needed based on container size and length.
+        Scales from base specs (40ft = 12.192m) to actual container length.
+        """
+        baseSpec = CONSUMABLES_SPECS.get(containerSize, CONSUMABLES_SPECS["40ft"])
+        baseLength = baseSpec["length_m"]
+        scaleFactor = self.containerLength / baseLength
+        
+        return {
+            "welding_wire": baseSpec["welding_wire_kg"] * scaleFactor,
+            "cutting_nozzle": max(1, int(baseSpec["cutting_nozzle_pcs"] * scaleFactor)),
+            "fastener": max(10, int(baseSpec["fastener_pcs"] * scaleFactor)),
+            "gear_pump": baseSpec.get("gear_pump_pcs", 0),
+        }
 
     def canBuildContainer(self, containerSize: str) -> dict[str, Any]:
         """Check if we can build a container from available materials."""
@@ -61,6 +84,12 @@ class ContainerBuilder:
             materials.extend(extraSteelResult["items"])
             totalCost += extraSteelResult["totalCost"]
             totalWeight += extraSteelResult["totalWeight"]
+
+        # Get consumables (welding wire, cutting nozzles, fasteners)
+        consumablesResult = self._getConsumables(containerSize)
+        materials.extend(consumablesResult["items"])
+        totalCost += consumablesResult["totalCost"]
+        totalWeight += consumablesResult["totalWeight"]
 
         # Need at least 50% of steel + sheets
         requiredWeight = specs["steel_frame_kg"]
@@ -136,6 +165,13 @@ class ContainerBuilder:
 
         # NOTE: Do NOT add aluminum - already included in fixed items
 
+        # Scaled consumables (welding wire, cutting nozzles, fasteners)
+        # Consumables scale proportionally with the build
+        consumablesResult = self._getConsumablesScaled(containerSize, scaleFactor)
+        materials.extend(consumablesResult["items"])
+        totalCost += consumablesResult["totalCost"]
+        totalWeight += consumablesResult["totalWeight"]
+
         return {
             "success": len(materials) > 0,
             "items": materials,
@@ -143,6 +179,38 @@ class ContainerBuilder:
             "totalWeight": round(totalWeight, 2),
             "scaled": True,
             "scaleFactor": scaleFactor,
+        }
+
+    def _getConsumablesScaled(
+        self, containerSize: str, scaleFactor: float
+    ) -> dict[str, Any]:
+        """Get scaled consumables for partial container build."""
+        neededQty = self._calculateConsumablesNeeded(containerSize)
+        
+        items = []
+        totalCost = 0.0
+        totalWeight = 0.0
+        
+        # Scale down quantities
+        scaledNeeded = {
+            "welding_wire": neededQty["welding_wire"] * scaleFactor,
+            "cutting_nozzle": max(1, int(neededQty["cutting_nozzle"] * scaleFactor)),
+            "fastener": max(5, int(neededQty["fastener"] * scaleFactor)),
+            "gear_pump": 0,  # Don't scale gear pump
+        }
+        
+        for consumableType, qty in scaledNeeded.items():
+            if qty <= 0:
+                continue
+            result = self._getConsumableItem(consumableType, qty)
+            items.extend(result["items"])
+            totalCost += result["totalCost"]
+            totalWeight += result["totalWeight"]
+        
+        return {
+            "items": items,
+            "totalCost": round(totalCost, 2),
+            "totalWeight": round(totalWeight, 2),
         }
 
     def _getSteelMaterials(self, neededKg: float) -> dict[str, Any]:
@@ -273,4 +341,137 @@ class ContainerBuilder:
             }],
             "totalCost": round(actualQty * unitPrice, 2),
             "totalWeight": round(actualQty, 2),
+        }
+
+    def getConsumables(self, containerSize: str = "40ft") -> dict[str, Any]:
+        """
+        Get consumables from inventory for container fabrication.
+        Public method to fetch consumables independently of structural build.
+        
+        Consumables are materials used during building:
+        - welding_wire: for welding steel frame (unit: kg, has weight)
+        - cutting_nozzle: for plasma cutting (unit: pcs, negligible weight)
+        - fastener: for assembly (unit: Con/pcs, negligible weight)
+        - gear_pump: optional additional pump (unit: pcs)
+        """
+        return self._getConsumables(containerSize)
+
+    def _getConsumables(self, containerSize: str) -> dict[str, Any]:
+        """
+        Internal method to get consumables from inventory.
+        
+        Consumables are materials used during building:
+        - welding_wire: for welding steel frame (unit: kg, has weight)
+        - cutting_nozzle: for plasma cutting (unit: pcs, negligible weight)
+        - fastener: for assembly (unit: Con/pcs, negligible weight)
+        - gear_pump: optional additional pump (unit: pcs)
+        """
+        neededQty = self._calculateConsumablesNeeded(containerSize)
+        
+        items = []
+        totalCost = 0.0
+        totalWeight = 0.0
+        
+        # Get welding wire
+        weldingResult = self._getConsumableItem("welding_wire", neededQty["welding_wire"])
+        items.extend(weldingResult["items"])
+        totalCost += weldingResult["totalCost"]
+        totalWeight += weldingResult["totalWeight"]
+        
+        # Get cutting nozzles
+        nozzleResult = self._getConsumableItem("cutting_nozzle", neededQty["cutting_nozzle"])
+        items.extend(nozzleResult["items"])
+        totalCost += nozzleResult["totalCost"]
+        totalWeight += nozzleResult["totalWeight"]
+        
+        # Get fasteners
+        fastenerResult = self._getConsumableItem("fastener", neededQty["fastener"])
+        items.extend(fastenerResult["items"])
+        totalCost += fastenerResult["totalCost"]
+        totalWeight += fastenerResult["totalWeight"]
+        
+        # Get gear pump (optional - only if specified in specs)
+        if neededQty.get("gear_pump", 0) > 0:
+            pumpResult = self._getConsumableItem("gear_pump", neededQty["gear_pump"])
+            items.extend(pumpResult["items"])
+            totalCost += pumpResult["totalCost"]
+            totalWeight += pumpResult["totalWeight"]
+        
+        if items:
+            logger.info(
+                f"Consumables: {len(items)} items, "
+                f"+{totalWeight:.1f}kg, +{totalCost:,.0f} VND"
+            )
+        
+        return {
+            "items": items,
+            "totalCost": round(totalCost, 2),
+            "totalWeight": round(totalWeight, 2),
+        }
+
+    def _getConsumableItem(self, consumableType: str, neededQty: float) -> dict[str, Any]:
+        """Get a specific consumable type from inventory."""
+        result = self.db.executeQuery(
+            """
+            SELECT DISTINCT ON (i.id)
+                i.id, i.code, i.name, i.unit, i.type, ir.final_quantity,
+                CASE WHEN ir.final_quantity > 0 
+                     THEN ir.final_value::numeric / ir.final_quantity ELSE 0 END as unit_price
+            FROM items i
+            JOIN inventory_records ir ON i.id = ir.item_id
+            WHERE i.type = %s AND ir.final_quantity > 0
+            ORDER BY i.id, ir.record_date DESC
+            """,
+            (consumableType,),
+        )
+
+        if not result:
+            logger.debug(f"No {consumableType} available in inventory")
+            return {"items": [], "totalCost": 0, "totalWeight": 0}
+
+        items = []
+        collectedQty = 0.0
+        totalCost = 0.0
+        totalWeight = 0.0
+        
+        # Sort by cheapest first
+        rows = sorted(result, key=lambda r: float(r[6]) if r[6] else float("inf"))
+
+        for row in rows:
+            if collectedQty >= neededQty:
+                break
+            
+            availableQty = float(row[5])
+            unitPrice = float(row[6])
+            needed = min(neededQty - collectedQty, availableQty)
+            
+            if needed <= 0:
+                continue
+
+            # Calculate weight based on type
+            weightPerUnit = CONSUMABLE_WEIGHTS.get(consumableType, 0)
+            weight = needed * weightPerUnit
+
+            items.append({
+                "id": row[0],
+                "code": row[1],
+                "name": row[2],
+                "unit": row[3],
+                "type": row[4],
+                "quantity": round(needed, 2),
+                "unitPrice": unitPrice,
+                "totalValue": round(needed * unitPrice, 2),
+                "weight": round(weight, 2),
+                "forContainerBuild": True,
+                "isConsumable": True,
+            })
+            
+            collectedQty += needed
+            totalCost += needed * unitPrice
+            totalWeight += weight
+
+        return {
+            "items": items,
+            "totalCost": round(totalCost, 2),
+            "totalWeight": round(totalWeight, 2),
         }

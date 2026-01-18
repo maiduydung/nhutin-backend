@@ -100,6 +100,43 @@ HYDRAULIC_PUMP_MAP = {
 HYDRAULIC_OIL_WEIGHT_KG = 200  # Full barrel ~200kg (oil + drum)
 HYDRAULIC_PUMP_WEIGHT_KG = 50  # Approximate pump weight
 
+# =============================================================================
+# Consumables Configuration (used during container fabrication)
+# =============================================================================
+# Consumables are materials used during container building process:
+# - Welding wire: for welding steel frame (unit: kg, has weight)
+# - Cutting nozzles: for plasma cutting steel (unit: pcs, negligible weight)
+# - Fasteners: for assembling components (unit: Con/pcs, negligible weight)
+# - Gear pump: may be used as part of hydraulic system (unit: pcs)
+CONSUMABLE_TYPES = ["welding_wire", "cutting_nozzle", "fastener", "gear_pump"]
+
+# Usage specs per container size (scaled by container length)
+# Base specs are for 40ft (12.192m) container
+CONSUMABLES_SPECS = {
+    "40ft": {
+        "length_m": 12.192,
+        "welding_wire_kg": 20,      # ~20kg of welding wire for 12m
+        "cutting_nozzle_pcs": 3,    # ~3 cutting nozzles consumed
+        "fastener_pcs": 100,        # ~100 fasteners used
+        "gear_pump_pcs": 0,         # Optional - user can include if needed
+    },
+    "20ft": {
+        "length_m": 6.096,
+        "welding_wire_kg": 10,      # ~10kg for 6m
+        "cutting_nozzle_pcs": 2,    # ~2 nozzles
+        "fastener_pcs": 50,         # ~50 fasteners
+        "gear_pump_pcs": 0,
+    },
+}
+
+# Weight per unit for consumables (kg)
+CONSUMABLE_WEIGHTS = {
+    "welding_wire": 1.0,      # 1kg per kg (unit is kg)
+    "cutting_nozzle": 0.0,    # Negligible weight (pcs)
+    "fastener": 0.0,          # Negligible weight (Con/pcs)
+    "gear_pump": 50.0,        # ~50kg per pump
+}
+
 # Emails
 SENDER_EMAIL = "maiduydungvn@gmail.com"
 SENDER_EMAIL_APP_PASSWORD = getConfig("SENDER_EMAIL_APP_PASSWORD")

@@ -3,7 +3,13 @@ Weight Calculator Service.
 Calculates weight for different item types.
 """
 import re
-from config import logger, WALKING_FLOORS, CONTAINER_EMPTY_WEIGHTS, HYDRAULIC_PUMP_WEIGHT_KG
+from config import (
+    logger,
+    WALKING_FLOORS,
+    CONTAINER_EMPTY_WEIGHTS,
+    HYDRAULIC_PUMP_WEIGHT_KG,
+    CONSUMABLE_WEIGHTS,
+)
 from services.database import Database
 
 
@@ -114,6 +120,10 @@ class WeightCalculator:
         # Hydraulic pump
         if itemType == "hydraulic_pump":
             return quantity * HYDRAULIC_PUMP_WEIGHT_KG
+        
+        # Consumables (welding_wire, cutting_nozzle, fastener, gear_pump)
+        if itemType in CONSUMABLE_WEIGHTS:
+            return quantity * CONSUMABLE_WEIGHTS[itemType]
         
         # Items sold by pieces (Con, pcs, cái) - typically light accessories
         if unit in ["Con", "pcs", "cái"]:
