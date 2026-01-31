@@ -164,25 +164,24 @@ class Inventory:
             # 0: Warehouse name (ignored)
             # 1: Code
             # 2: Name
-            # 3: (empty column)
-            # 4: Unit
-            # 5: Initial Qty, 6: Initial Value
-            # 7: Imported Qty, 8: Imported Value
-            # 9: Exported Qty, 10: Exported Value
-            # 11: Final Qty, 12: Final Value
+            # 3: Unit
+            # 4: Initial Qty, 5: Initial Value
+            # 6: Imported Qty, 7: Imported Value
+            # 8: Exported Qty, 9: Exported Value
+            # 10: Final Qty, 11: Final Value
             logger.info(f"📊 Reading data rows (skiprows=5)...")
             df = pd.DataFrame({
                 "code": dfRaw[1],
                 "name": dfRaw[2],
-                "unit": dfRaw[4],
-                "initial_quantity": dfRaw[5],
-                "initial_value": dfRaw[6],
-                "imported_quantity": dfRaw[7],
-                "imported_value": dfRaw[8],
-                "exported_quantity": dfRaw[9],
-                "exported_value": dfRaw[10],
-                "final_quantity": dfRaw[11],
-                "final_value": dfRaw[12],
+                "unit": dfRaw[3],
+                "initial_quantity": dfRaw[4],
+                "initial_value": dfRaw[5],
+                "imported_quantity": dfRaw[6],
+                "imported_value": dfRaw[7],
+                "exported_quantity": dfRaw[8],
+                "exported_value": dfRaw[9],
+                "final_quantity": dfRaw[10],
+                "final_value": dfRaw[11],
             })
             logger.info(f"   📋 Total rows in Excel: {len(df)}")
 

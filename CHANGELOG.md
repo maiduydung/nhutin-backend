@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-02-01
+- Fixed Excel column mapping for new file format (12 columns instead of 13).
+- Removed assumption of empty column at index 3; unit now at column 3 (was column 4).
+- Fixed `KeyError: 12` caused by accessing non-existent column index.
+
 ## 2025-01-17
 - Added new item types for manufacturing consumables and equipment:
   - `gear_pump` - Bơm Bánh Răng (gear pumps, different from hydraulic pumps)
