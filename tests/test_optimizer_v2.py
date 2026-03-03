@@ -642,8 +642,8 @@ class TestBuildContainerFlag:
         assert result["containerBuiltFromMaterials"] == False
         print(f"✅ Success with default truck body weight: weight={result['totalWeight']}, margin={result['profitMargin']}%")
 
-    def test_skip_build_total_weight_equals_item_weight_sum(self, optimizer):
-        """Regression: skip-build mode summary weight must exclude implicit +1800kg."""
+    def test_skip_build_total_weight_includes_existing_truck_body(self, optimizer):
+        """In skip-build mode, totalWeight should include implicit existing truck body weight."""
         result = optimizer.optimize(
             containerLength=9.5,
             itemModelType="KSD",
@@ -657,13 +657,12 @@ class TestBuildContainerFlag:
         assert result["status"] in ["ok", "warning"], f"Expected success, got: {result.get('error')}"
 
         item_weight_sum = round(sum(float(item.get("weight", 0) or 0) for item in result["items"]), 2)
-        assert result["totalWeight"] == pytest.approx(item_weight_sum, abs=0.01)
+        assert result["shipmentWeight"] == pytest.approx(item_weight_sum, abs=0.01)
+        assert result["existingTruckBodyWeight"] == pytest.approx(1800, abs=0.01)
+        assert result["totalWeight"] == pytest.approx(item_weight_sum + 1800, abs=0.01)
 
-        # Exact regression guard: old bug returned summary.totalWeight = item_sum + 1800
-        assert result["totalWeight"] != pytest.approx(item_weight_sum + 1800, abs=0.01)
-
-    def test_skip_build_disables_weight_constraints_in_summary(self, optimizer):
-        """Skip-build mode should disable weight constraints in summary to avoid misleading UI."""
+    def test_skip_build_returns_weight_breakdown_fields(self, optimizer):
+        """Skip-build mode should return explicit weight breakdown for UI/export clarity."""
         result = optimizer.optimize(
             containerLength=9.5,
             itemModelType="KSD",
@@ -675,12 +674,15 @@ class TestBuildContainerFlag:
         )
 
         assert result["status"] in ["ok", "warning"], f"Expected success, got: {result.get('error')}"
-        constraints = result["constraints"]
 
-        assert constraints["weightConstraintEnabled"] is False
-        assert constraints["targetWeight"] == 0
-        assert constraints["weightRange"] == [0, 0]
-        assert constraints["weightOk"] is True
+        breakdown = result.get("weightBreakdown", {})
+        assert breakdown.get("includesExistingTruckBody") is True
+        assert breakdown.get("existingTruckBodyWeight", 0) == pytest.approx(1800, abs=0.01)
+        assert breakdown.get("totalLoadedWeight", 0) == pytest.approx(result["totalWeight"], abs=0.01)
+
+        # Constraints remain active in this mode
+        constraints = result["constraints"]
+        assert constraints["weightConstraintEnabled"] is True
 
 
 class TestUserInputBuildContainerFlag:

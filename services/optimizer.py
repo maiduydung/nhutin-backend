@@ -291,7 +291,6 @@ class OptimizerV2:
                     [], 0, 0, receiptPrice, bounds,
                     containerBuilt, error=feasibility.reason,
                     diagnosticInfo=diagnosticInfo,
-                    disableWeightConstraints=(containerType == "thung_xe_tai" and not buildContainer),
                 )
         
         # Log warning if in relaxed/best-effort mode
@@ -365,14 +364,10 @@ class OptimizerV2:
         # ─────────────────────────────────────────────────────────────
         # Build final result
         # ─────────────────────────────────────────────────────────────
-        skipContainerBuildMode = (containerType == "thung_xe_tai" and not buildContainer)
-        reportedWeight = max(0.0, currentWeight - implicitExistingWeight)
-
         return self._buildResult(
             allItems, currentWeight, currentCost, receiptPrice, bounds, containerBuilt,
             feasibilityWarning=feasibilityWarning,
-            reportedWeightOverride=reportedWeight,
-            disableWeightConstraints=skipContainerBuildMode,
+            implicitExistingWeight=implicitExistingWeight,
         )
 
     def _getPrebuiltContainer(self, containerType: str) -> dict[str, Any] | None:
@@ -427,8 +422,7 @@ class OptimizerV2:
         error: str = None,
         diagnosticInfo: dict = None,
         feasibilityWarning: str = None,
-        reportedWeightOverride: float | None = None,
-        disableWeightConstraints: bool = False,
+        implicitExistingWeight: float = 0.0,
     ) -> dict[str, Any]:
         """
         Build the final result dictionary.
@@ -441,11 +435,13 @@ class OptimizerV2:
         
         # Check if within bounds (with 0.5% tolerance for margin)
         marginTolerance = 0.5
-        reportedWeight = reportedWeightOverride if reportedWeightOverride is not None else totalWeight
 
         internalWeightOk = bounds.minWeight <= totalWeight <= bounds.maxWeight
-        weightOk = True if disableWeightConstraints else internalWeightOk
+        weightOk = internalWeightOk
         marginOk = (bounds.minMargin * 100 - marginTolerance) <= profitMargin <= (bounds.maxMargin * 100 + marginTolerance)
+
+        # Weight breakdown for reporting transparency
+        itemWeight = max(0.0, totalWeight - implicitExistingWeight)
         
         status = "ok" if weightOk and marginOk and not error else "warning"
         if error:
@@ -453,7 +449,8 @@ class OptimizerV2:
             # For impossible cases, return empty items
             items = []
             totalWeight = 0
-            reportedWeight = 0
+            itemWeight = 0
+            implicitExistingWeight = 0
             totalCost = 0
             profit = 0
             profitMargin = 0
@@ -466,28 +463,33 @@ class OptimizerV2:
             logger.info(f"   Warning: {feasibilityWarning}")
         else:
             logger.info(f"✅ Final: weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
-        if disableWeightConstraints:
-            logger.info("   Weight OK: N/A (disabled in skip-container mode)")
-        else:
-            logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
+        logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
         logger.info(f"   Margin OK: {marginOk} ({bounds.minMargin*100:.0f}-{bounds.maxMargin*100:.0f}%)")
         logger.info("=" * 60)
         
         result = {
             "status": status,
             "items": items,
-            "totalWeight": round(reportedWeight, 2),
+            "totalWeight": round(totalWeight, 2),
             "totalCost": round(totalCost, 2),
             "receiptPrice": receiptPrice,
             "profit": round(profit, 2),
             "profitMargin": round(profitMargin, 2),
             "containerBuiltFromMaterials": containerBuilt,
+            "shipmentWeight": round(itemWeight, 2),
+            "existingTruckBodyWeight": round(implicitExistingWeight, 2),
+            "weightBreakdown": {
+                "shipmentWeight": round(itemWeight, 2),
+                "existingTruckBodyWeight": round(implicitExistingWeight, 2),
+                "totalLoadedWeight": round(totalWeight, 2),
+                "includesExistingTruckBody": implicitExistingWeight > 0,
+            },
             "constraints": {
                 "containerLength": bounds.containerLength,
-                "targetWeight": 0 if disableWeightConstraints else bounds.targetWeight,
-                "weightRange": [0, 0] if disableWeightConstraints else [bounds.minWeight, bounds.maxWeight],
+                "targetWeight": bounds.targetWeight,
+                "weightRange": [bounds.minWeight, bounds.maxWeight],
                 "weightOk": weightOk,
-                "weightConstraintEnabled": not disableWeightConstraints,
+                "weightConstraintEnabled": True,
                 "targetProfitMargin": bounds.targetMargin * 100,
                 "marginRange": [bounds.minMargin * 100, bounds.maxMargin * 100],
                 "marginOk": marginOk,

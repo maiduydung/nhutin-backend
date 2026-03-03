@@ -85,6 +85,14 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
                 "receiptPrice": result.get("receiptPrice"),
                 "profit": 0,
                 "profitMargin": 0,
+                "shipmentWeight": 0,
+                "existingTruckBodyWeight": 0,
+                "weightBreakdown": {
+                    "shipmentWeight": 0,
+                    "existingTruckBodyWeight": 0,
+                    "totalLoadedWeight": 0,
+                    "includesExistingTruckBody": False,
+                },
                 "constraints": result.get("constraints", {}),
                 "diagnostic": result.get("diagnostic", {}),
             }
@@ -104,6 +112,14 @@ def processReceipt(req: func.HttpRequest) -> func.HttpResponse:
                 "profit": result["profit"],
                 "profitMargin": result["profitMargin"],
                 "containerBuiltFromMaterials": result.get("containerBuiltFromMaterials", False),
+                "shipmentWeight": result.get("shipmentWeight", result.get("totalWeight", 0)),
+                "existingTruckBodyWeight": result.get("existingTruckBodyWeight", 0),
+                "weightBreakdown": result.get("weightBreakdown", {
+                    "shipmentWeight": result.get("shipmentWeight", result.get("totalWeight", 0)),
+                    "existingTruckBodyWeight": result.get("existingTruckBodyWeight", 0),
+                    "totalLoadedWeight": result.get("totalWeight", 0),
+                    "includesExistingTruckBody": result.get("existingTruckBodyWeight", 0) > 0,
+                }),
                 "constraints": result.get("constraints", {}),
                 "error": result.get("error"),
                 "warning": result.get("warning"),  # Relaxed mode warning
