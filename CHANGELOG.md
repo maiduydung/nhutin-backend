@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Skip-build truck body mode (`thung_xe_tai` + `buildContainer=false`) now returns an explicit weight breakdown while preserving existing optimization logic.**
+- `totalWeight` remains the **total loaded weight** (includes implicit existing truck body weight, default 1800kg when not provided).
+- Added response fields for clarity across UI/export consumers:
+  - `shipmentWeight`
+  - `existingTruckBodyWeight`
+  - `weightBreakdown` (`shipmentWeight`, `existingTruckBodyWeight`, `totalLoadedWeight`, `includesExistingTruckBody`)
+- `constraints.weightConstraintEnabled` remains `true` in this mode so physics checks stay consistent.
+
+### Fixed
+- Resolved ambiguity that caused users to interpret `totalWeight` as shipment-items-only weight in skip-build scenarios.
+- Added regression tests for skip-build weight math and breakdown fields.
+
 ## [2.3.0] - 2026-01-18
 
 ### Added
