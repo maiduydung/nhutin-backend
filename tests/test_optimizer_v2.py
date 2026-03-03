@@ -642,6 +642,46 @@ class TestBuildContainerFlag:
         assert result["containerBuiltFromMaterials"] == False
         print(f"✅ Success with default truck body weight: weight={result['totalWeight']}, margin={result['profitMargin']}%")
 
+    def test_skip_build_total_weight_equals_item_weight_sum(self, optimizer):
+        """Regression: skip-build mode summary weight must exclude implicit +1800kg."""
+        result = optimizer.optimize(
+            containerLength=9.5,
+            itemModelType="KSD",
+            slatType="112mm",
+            receiptPrice=378_700_000,
+            containerType="thung_xe_tai",
+            targetProfitMargin=0.20,
+            buildContainer=False,
+        )
+
+        assert result["status"] in ["ok", "warning"], f"Expected success, got: {result.get('error')}"
+
+        item_weight_sum = round(sum(float(item.get("weight", 0) or 0) for item in result["items"]), 2)
+        assert result["totalWeight"] == pytest.approx(item_weight_sum, abs=0.01)
+
+        # Exact regression guard: old bug returned summary.totalWeight = item_sum + 1800
+        assert result["totalWeight"] != pytest.approx(item_weight_sum + 1800, abs=0.01)
+
+    def test_skip_build_disables_weight_constraints_in_summary(self, optimizer):
+        """Skip-build mode should disable weight constraints in summary to avoid misleading UI."""
+        result = optimizer.optimize(
+            containerLength=9.5,
+            itemModelType="KSD",
+            slatType="112mm",
+            receiptPrice=378_700_000,
+            containerType="thung_xe_tai",
+            targetProfitMargin=0.20,
+            buildContainer=False,
+        )
+
+        assert result["status"] in ["ok", "warning"], f"Expected success, got: {result.get('error')}"
+        constraints = result["constraints"]
+
+        assert constraints["weightConstraintEnabled"] is False
+        assert constraints["targetWeight"] == 0
+        assert constraints["weightRange"] == [0, 0]
+        assert constraints["weightOk"] is True
+
 
 class TestUserInputBuildContainerFlag:
     """Test buildContainer flag in UserInput model."""

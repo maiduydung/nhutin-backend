@@ -99,6 +99,7 @@ class OptimizerV2:
         
         currentWeight = fixedWeight
         currentCost = fixedCost
+        implicitExistingWeight = 0.0  # Non-item weight (existing truck body in skip-build mode)
         
         # ─────────────────────────────────────────────────────────────
         # Handle container (pre-built or build from materials)
@@ -163,8 +164,9 @@ class OptimizerV2:
             # Add the existing container weight to current weight (no cost - already owned)
             # Use default weight if not specified
             effectiveWeight = existingContainerWeight if existingContainerWeight > 0 else DEFAULT_EXISTING_TRUCK_BODY_WEIGHT
-            currentWeight += effectiveWeight
-            logger.info(f"Phase 1b: Skipped - using existing truck body ({effectiveWeight:.0f} kg)")
+            implicitExistingWeight = float(effectiveWeight)
+            currentWeight += implicitExistingWeight
+            logger.info(f"Phase 1b: Skipped - using existing truck body ({implicitExistingWeight:.0f} kg)")
         else:
             # Container 20ft / 40ft: Check inventory for pre-built
             prebuiltContainer = self._getPrebuiltContainer(containerType)
@@ -288,7 +290,8 @@ class OptimizerV2:
                 return self._buildResult(
                     [], 0, 0, receiptPrice, bounds,
                     containerBuilt, error=feasibility.reason,
-                    diagnosticInfo=diagnosticInfo
+                    diagnosticInfo=diagnosticInfo,
+                    disableWeightConstraints=(containerType == "thung_xe_tai" and not buildContainer),
                 )
         
         # Log warning if in relaxed/best-effort mode
@@ -362,9 +365,14 @@ class OptimizerV2:
         # ─────────────────────────────────────────────────────────────
         # Build final result
         # ─────────────────────────────────────────────────────────────
+        skipContainerBuildMode = (containerType == "thung_xe_tai" and not buildContainer)
+        reportedWeight = max(0.0, currentWeight - implicitExistingWeight)
+
         return self._buildResult(
             allItems, currentWeight, currentCost, receiptPrice, bounds, containerBuilt,
             feasibilityWarning=feasibilityWarning,
+            reportedWeightOverride=reportedWeight,
+            disableWeightConstraints=skipContainerBuildMode,
         )
 
     def _getPrebuiltContainer(self, containerType: str) -> dict[str, Any] | None:
@@ -419,6 +427,8 @@ class OptimizerV2:
         error: str = None,
         diagnosticInfo: dict = None,
         feasibilityWarning: str = None,
+        reportedWeightOverride: float | None = None,
+        disableWeightConstraints: bool = False,
     ) -> dict[str, Any]:
         """
         Build the final result dictionary.
@@ -431,7 +441,10 @@ class OptimizerV2:
         
         # Check if within bounds (with 0.5% tolerance for margin)
         marginTolerance = 0.5
-        weightOk = bounds.minWeight <= totalWeight <= bounds.maxWeight
+        reportedWeight = reportedWeightOverride if reportedWeightOverride is not None else totalWeight
+
+        internalWeightOk = bounds.minWeight <= totalWeight <= bounds.maxWeight
+        weightOk = True if disableWeightConstraints else internalWeightOk
         marginOk = (bounds.minMargin * 100 - marginTolerance) <= profitMargin <= (bounds.maxMargin * 100 + marginTolerance)
         
         status = "ok" if weightOk and marginOk and not error else "warning"
@@ -440,6 +453,7 @@ class OptimizerV2:
             # For impossible cases, return empty items
             items = []
             totalWeight = 0
+            reportedWeight = 0
             totalCost = 0
             profit = 0
             profitMargin = 0
@@ -452,14 +466,17 @@ class OptimizerV2:
             logger.info(f"   Warning: {feasibilityWarning}")
         else:
             logger.info(f"✅ Final: weight={totalWeight:.0f}kg, margin={profitMargin:.1f}%")
-        logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
+        if disableWeightConstraints:
+            logger.info("   Weight OK: N/A (disabled in skip-container mode)")
+        else:
+            logger.info(f"   Weight OK: {weightOk} ({bounds.minWeight}-{bounds.maxWeight}kg)")
         logger.info(f"   Margin OK: {marginOk} ({bounds.minMargin*100:.0f}-{bounds.maxMargin*100:.0f}%)")
         logger.info("=" * 60)
         
         result = {
             "status": status,
             "items": items,
-            "totalWeight": round(totalWeight, 2),
+            "totalWeight": round(reportedWeight, 2),
             "totalCost": round(totalCost, 2),
             "receiptPrice": receiptPrice,
             "profit": round(profit, 2),
@@ -467,9 +484,10 @@ class OptimizerV2:
             "containerBuiltFromMaterials": containerBuilt,
             "constraints": {
                 "containerLength": bounds.containerLength,
-                "targetWeight": bounds.targetWeight,
-                "weightRange": [bounds.minWeight, bounds.maxWeight],
+                "targetWeight": 0 if disableWeightConstraints else bounds.targetWeight,
+                "weightRange": [0, 0] if disableWeightConstraints else [bounds.minWeight, bounds.maxWeight],
                 "weightOk": weightOk,
+                "weightConstraintEnabled": not disableWeightConstraints,
                 "targetProfitMargin": bounds.targetMargin * 100,
                 "marginRange": [bounds.minMargin * 100, bounds.maxMargin * 100],
                 "marginOk": marginOk,
