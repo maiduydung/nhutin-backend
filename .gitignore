@@ -215,3 +215,12 @@ local.settings.json
 
 # VS Code
 .vscode/*
+
+# Test result snapshots
+tests/results_*.json
+
+# HTTP request files (may contain API keys)
+*.http
+
+# Log files
+*.log

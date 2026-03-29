@@ -1,35 +1,19 @@
-# Azure packages
+# Azure Functions runtime
 azure-functions
-azure-cosmos
-azure-servicebus
-azure-data-tables
-azure-storage-blob
-azure-identity 
-azure-keyvault-secrets
-azure-ai-formrecognizer
 
-# Core ML and Data Processing
-pandas
-numpy
-
-# Utilities
-tenacity
-python-dotenv
-aiohttp
-aiofiles
-tqdm
-
-# Backend
-fastapi
-uvicorn
+# Database
 psycopg2-binary
 
 # Validation
 pydantic>=2.6.0
 
-# Data Processing
+# Configuration
+python-dotenv
+
+# Data processing (inventory Excel parsing)
+pandas
 openpyxl
 
-# Google APIs
+# Google Drive integration
 google-auth
 google-api-python-client

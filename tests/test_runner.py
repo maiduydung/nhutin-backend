@@ -4,14 +4,15 @@ Captures input, output, and generates structured results for Reflex UI
 """
 
 import json
+import os
 import requests
 from datetime import datetime
 from typing import Literal
 
 # Configuration
 LOCAL_URL = "http://localhost:7071/api/process_receipt"
-PROD_URL = "https://nhutin-bom-prod.azurewebsites.net/api/process_receipt"
-PROD_KEY = "REDACTED"
+PROD_URL = os.getenv("BOM_PROD_URL", "https://nhutin-bom-prod.azurewebsites.net/api/process_receipt")
+PROD_KEY = os.getenv("BOM_PROD_KEY", "")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEST CASES - Comprehensive coverage
