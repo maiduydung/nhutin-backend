@@ -362,6 +362,11 @@ class OptimizerV2:
             logger.info(f"After Phase 4: weight={currentWeight:.0f}kg, cost={currentCost:,.0f}")
         
         # ─────────────────────────────────────────────────────────────
+        # Deduplicate items (same item can be added across phases)
+        # ─────────────────────────────────────────────────────────────
+        allItems = self._mergeItemsById(allItems)
+
+        # ─────────────────────────────────────────────────────────────
         # Build final result
         # ─────────────────────────────────────────────────────────────
         return self._buildResult(
@@ -369,6 +374,21 @@ class OptimizerV2:
             feasibilityWarning=feasibilityWarning,
             implicitExistingWeight=implicitExistingWeight,
         )
+
+    @staticmethod
+    def _mergeItemsById(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Merge duplicate items (same ID) that were added across different phases."""
+        merged = {}
+        for item in items:
+            itemId = item["id"]
+            if itemId in merged:
+                existing = merged[itemId]
+                existing["quantity"] += item["quantity"]
+                existing["weight"] = round(existing["weight"] + item.get("weight", 0), 2)
+                existing["totalValue"] = round(existing["totalValue"] + item.get("totalValue", 0), 2)
+            else:
+                merged[itemId] = dict(item)
+        return list(merged.values())
 
     def _getPrebuiltContainer(self, containerType: str) -> dict[str, Any] | None:
         """Get pre-built container from inventory."""
