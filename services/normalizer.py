@@ -138,7 +138,7 @@ class ItemNormalizer:
         'walking_floor_ksd': 'set',
         'walking_floor_kmd': 'set',
         'walking_floor_r2dx': 'set',
-        'container': 'set',
+        'container': 'pcs',
         'controller': 'set',
         'hydraulic_pump': 'pcs',
         'hydraulic_oil': 'barrel',
