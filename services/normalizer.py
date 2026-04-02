@@ -129,7 +129,7 @@ class ItemNormalizer:
         
         # Containers
         (r'v[oỏ].*container', 'container'),
-        (r'\bcontainer\b', 'container'),
+        (r'container', 'container'),
     ]
 
     # Default units for item types (when unit is NULL/missing)
