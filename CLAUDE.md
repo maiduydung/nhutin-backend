@@ -63,3 +63,7 @@ pytest tests/test_consumables.py -v
 ```
 
 Tests require a live PostgreSQL connection (configured via `local.settings.json`).
+
+## Critical rule: always test before pushing
+
+The `processReceipts` branch has CI/CD to production. **Never push without running the full test suite first.** Write tests for any new fix or feature, run `pytest tests/ -v`, and only push when all tests pass. This applies to all branches with deployment pipelines.

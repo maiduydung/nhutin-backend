@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Duplicate items in BOM output** — Same item (e.g. `steel_u`) could appear as separate rows when added by different optimizer phases (Phase 1b container build + Phase 2 weight filling, or Phase 2 + Phase 4 micro-adjust). Root cause: `allItems` list was built via `extend()` across phases without deduplication, so the same DB item ID could have multiple dict entries. Added `_mergeItemsById()` that consolidates entries by item ID, summing quantity/weight/totalValue before building the final result.
+  - **Impact:** Clients receiving the XML/JSON output saw duplicate rows with identical IDs, inflating apparent item count
+  - **Affected scenarios:** `mooc_long`, `thung_xe_tai` (buildContainer=True), `container_40ft` when building from materials — any case where container builder and weight filler both pick from the same steel inventory
+
+### Added
+- **Deduplication test suite** (`tests/test_item_dedup.py`) — 9 unit tests for `_mergeItemsById()` (merge logic, ordering, rounding, edge cases) + 8 integration tests asserting zero duplicate IDs across all container types, relaxed mode, and Phase 4 scenarios
+
 ### Changed
 - **Skip-build truck body mode (`thung_xe_tai` + `buildContainer=false`) now returns an explicit weight breakdown while preserving existing optimization logic.**
 - `totalWeight` remains the **total loaded weight** (includes implicit existing truck body weight, default 1800kg when not provided).
