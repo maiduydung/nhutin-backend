@@ -3,7 +3,7 @@ name: Deploy Nhu Tin Bill of Materials Function App
 on:
   push:
     branches:
-      - main
+      - processReceipts
   workflow_dispatch:
 
 permissions:
@@ -57,8 +57,8 @@ jobs:
           echo "Expected Function: ${{ env.EXPECTED_FUNCTION_NAME }}"
 
           # Verify branch matches expected function app
-          if [[ "${{ github.ref_name }}" != "main" ]]; then
-            echo "❌ ERROR: This workflow should only run from main branch!"
+          if [[ "${{ github.ref_name }}" != "processReceipts" ]]; then
+            echo "❌ ERROR: This workflow should only run from processReceipts branch!"
             echo "Current branch: ${{ github.ref_name }}"
             exit 1
           fi
